@@ -84,8 +84,8 @@ jobs:
         echo "=== Files that reference gt1x_config ==="
         grep -rn "gt1x_config" . 2>/dev/null | head -20
      
-     - name: Context around GTP_INT_TRIGGER
-       run: |
+    - name: Context around GTP_INT_TRIGGER
+      run: |
         FILE="drivers/input/touchscreen/mediatek/GT1151/include/gt1x_tpd_common.h"
         echo "=== Context around GTP_INT_TRIGGER ==="
         grep -n -B10 -A5 "GTP_INT_TRIGGER" "$FILE"
