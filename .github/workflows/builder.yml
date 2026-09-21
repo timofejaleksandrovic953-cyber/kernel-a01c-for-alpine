@@ -13,7 +13,7 @@ jobs:
     - name: Checkout kernel source
       uses: actions/checkout@v4
       with:
-        repository: Takumi123w/kernel-a01c
+        repository: timofejaleksandrovic953-cyber/kernel-a01c-for-alpine
         ref: main
 
     - name: Install build dependencies
