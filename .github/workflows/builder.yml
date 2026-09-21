@@ -35,12 +35,17 @@ jobs:
         # Адаптируем конфиг под текущие исходники ядра
         make ARCH=arm64 olddefconfig
     
-    - name: Debug drvgen
+    - name: Debug - find drvgen and dtbo
       run: |
-        # Замените на реальный путь из drvgen.mk
-        find . -name "drvgen.pl" -o -name "drvgen" 2>/dev/null
-        # Попробуйте выполнить вручную, чтобы увидеть stderr
-        perl scripts/drvgen/drvgen.pl --help 2>&1 || true
+        echo "=== Contents of scripts/drvgen/ ==="
+        ls -la scripts/drvgen/ || echo "no dir"
+        echo "=== Search for drvgen anywhere ==="
+        find . -iname "*drvgen*" 2>/dev/null
+        echo "=== Search for dtbo references in Kconfig/Makefile ==="
+        grep -rn "DTBO\|dtboimg\|BUILD_ARM64_DT_OVERLAY" \
+          arch/arm64/Makefile \
+          arch/arm64/boot/Makefile \
+          scripts/Makefile 2>/dev/null | head -30
     
     - name: Build kernel
       run: |
