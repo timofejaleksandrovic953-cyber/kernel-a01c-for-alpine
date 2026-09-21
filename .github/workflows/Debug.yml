@@ -27,6 +27,7 @@ jobs:
         echo "=== Files in repo root ==="
         ls -la
         echo "=== .config present? ==="
+        cp a01core.config .config
         ls -la .config 2>/dev/null || echo "NO .config in root!"
         echo "=== Important .config flags ==="
         grep -E "CONFIG_TOUCHSCREEN|CONFIG_COMPAT|CONFIG_ARM64_4K|CONFIG_ARM64_VA_BITS|CONFIG_INPUT_EVDEV|CONFIG_I2C" .config 2>/dev/null || echo "no .config"
