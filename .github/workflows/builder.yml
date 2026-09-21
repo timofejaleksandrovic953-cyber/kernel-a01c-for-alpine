@@ -73,6 +73,30 @@ jobs:
         fi
         echo "=== After ==="
         cat "$MF"
+
+    - name: Patch ppm_v3 Makefile
+      run: |
+        # Ищем Makefile PPM
+        find drivers/misc/mediatek/base/power/ppm_v3/ -name "Makefile" | head
+        MF="drivers/misc/mediatek/base/power/ppm_v3/Makefile"
+        if [ -f "$MF" ]; then
+          if ! grep -q "ppm_v3/src/mach/mt6739" "$MF"; then
+            echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739/' >> "$MF"
+          fi
+          cat "$MF"
+        fi
+
+    - name: Add global MTK include paths
+      run: |
+        cat >> Makefile << 'EOF'
+        # Alpine port: extra MTK include paths (added automatically)
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739/
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/inc/
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/base/power/include/
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/include/
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+        KBUILD_CFLAGS += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739/include/
+        EOF
     
     - name: Build kernel
       run: |
