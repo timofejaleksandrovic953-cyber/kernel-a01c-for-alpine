@@ -1,0 +1,84 @@
+name: Debug Kernel Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      check_driver:
+        description: 'Директория драйвера для проверки (например, drivers/input/touchscreen/mediatek/GT1151)'
+        required: false
+        default: 'drivers/input/touchscreen/mediatek/GT1151'
+      search_pattern:
+        description: 'Что искать в репозитории (например, gt1x_config.h)'
+        required: false
+        default: 'gt1x_config.h'
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Repo root listing
+      run: |
+        echo "=== Working directory ==="
+        pwd
+        echo "=== Files in repo root ==="
+        ls -la
+        echo "=== .config present? ==="
+        ls -la .config 2>/dev/null || echo "NO .config in root!"
+        echo "=== Important .config flags ==="
+        grep -E "CONFIG_TOUCHSCREEN|CONFIG_COMPAT|CONFIG_ARM64_4K|CONFIG_ARM64_VA_BITS|CONFIG_INPUT_EVDEV|CONFIG_I2C" .config 2>/dev/null || echo "no .config"
+
+    - name: Driver directory listing
+      run: |
+        DIR="${{ github.event.inputs.check_driver }}"
+        echo "=== Contents of $DIR ==="
+        ls -la "$DIR" 2>/dev/null || echo "Directory $DIR does not exist!"
+        echo
+        echo "=== Contents of parent dir ==="
+        ls -la "$(dirname "$DIR")" 2>/dev/null | head -40
+
+    - name: Search for header file
+      run: |
+        PATTERN="${{ github.event.inputs.search_pattern }}"
+        echo "=== Searching for: $PATTERN ==="
+        find . -name "$PATTERN" 2>/dev/null || echo "Not found anywhere"
+        echo
+        echo "=== All gt1x headers ==="
+        find . -name "gt1x_*.h" 2>/dev/null
+        echo
+        echo "=== All goodix/gt related files ==="
+        find . -iname "*gt1x*" -o -iname "*goodix*" 2>/dev/null | head -30
+
+    - name: Show driver Makefile and Kconfig
+      run: |
+        DIR="${{ github.event.inputs.check_driver }}"
+        echo "=== Makefile ==="
+        cat "$DIR/Makefile" 2>/dev/null || echo "No Makefile"
+        echo
+        echo "=== Kconfig ==="
+        cat "$DIR/Kconfig" 2>/dev/null || echo "No Kconfig"
+        echo
+        echo "=== Parent Makefile ==="
+        cat "$(dirname "$DIR")/Makefile" 2>/dev/null | head -50
+
+    - name: Show includes in gt1x_generic.c
+      run: |
+        FILE="drivers/input/touchscreen/mediatek/GT1151/gt1x_generic.c"
+        if [ -f "$FILE" ]; then
+          echo "=== First 60 lines (includes) ==="
+          head -60 "$FILE"
+        else
+          echo "File not found: $FILE"
+        fi
+
+    - name: Which files reference the missing header
+      run: |
+        PATTERN="${{ github.event.inputs.search_pattern }}"
+        echo "=== Files that #include $PATTERN ==="
+        grep -rn "include.*$PATTERN" . 2>/dev/null | head -20
+        echo
+        echo "=== Files that reference gt1x_config ==="
+        grep -rn "gt1x_config" . 2>/dev/null | head -20
