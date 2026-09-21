@@ -53,10 +53,6 @@ jobs:
         MF="drivers/misc/mediatek/aee/mrdump/Makefile"
         grep -q "drivers/misc/mediatek/aee/mrdump" "$MF" || \
           echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/aee/mrdump/' >> "$MF"
-        # ComboA
-        MF="drivers/mmc/host/mediatek/ComboA/Makefile"
-        grep -q "drivers/mmc/host/mediatek/ComboA" "$MF" || \
-          echo 'subdir-ccflags-y += -I$(srctree)/drivers/mmc/host/mediatek/ComboA/' >> "$MF"
         # ppm_v3
         MF="drivers/misc/mediatek/base/power/ppm_v3/Makefile"
         [ -f "$MF" ] && (grep -q "ppm_v3/src/mach/mt6739" "$MF" || \
@@ -97,7 +93,8 @@ jobs:
                         -Wno-error=restrict \
                         -Wno-error=undef \
                         -Wno-error=enum-int-mismatch \
-                        -Wno-error=incompatible-pointer-types"
+                        -Wno-error=incompatible-pointer-types \
+                        -I$(pwd)/drivers/mmc/host/mediatek/ComboA"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
