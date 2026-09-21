@@ -47,20 +47,33 @@ jobs:
         # Проверяем ещё раз — olddefconfig не должен откатить
         grep -E "GT1151|GTP_CUSTOM" .config
 
-    - name: Add all MTK include paths
+    - name: Patch MTK Makefiles for missing headers
       run: |
-        echo "" >> Makefile
-        echo "# Auto-collected MTK include paths" >> Makefile
-        # Собираем все директории, содержащие .h-файлы в поддеревьях MTK
-        find drivers/misc/mediatek -type d 2>/dev/null | while read d; do
-          if ls "$d"/*.h >/dev/null 2>&1; then
-            echo "KBUILD_CFLAGS += -I\$(srctree)/$d/" >> Makefile
-          fi
-        done
-        echo "=== Added include paths (last 40) ==="
-        tail -40 Makefile
-        echo "=== Total added ==="
-        grep -c "KBUILD_CFLAGS += -I\$(srctree)/drivers/misc/mediatek" Makefile
+        # mrdump
+        MF="drivers/misc/mediatek/aee/mrdump/Makefile"
+        grep -q "drivers/misc/mediatek/aee/mrdump" "$MF" || \
+          echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/aee/mrdump/' >> "$MF"
+        # ComboA
+        MF="drivers/mmc/host/mediatek/ComboA/Makefile"
+        grep -q "drivers/mmc/host/mediatek/ComboA" "$MF" || \
+          echo 'subdir-ccflags-y += -I$(srctree)/drivers/mmc/host/mediatek/ComboA/' >> "$MF"
+        # ppm_v3
+        MF="drivers/misc/mediatek/base/power/ppm_v3/Makefile"
+        [ -f "$MF" ] && (grep -q "ppm_v3/src/mach/mt6739" "$MF" || \
+          echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739/' >> "$MF")
+        # spm_v4 — пути узнаем из вашего debug-workflow
+        MF="drivers/misc/mediatek/base/power/spm_v4/Makefile"
+        if [ -f "$MF" ]; then
+          HDR=$(find drivers/misc/mediatek/base/power/spm_v4/ -name "mtk_spm_sleep_internal.h" | head -1)
+          HDR_DIR=$(dirname "$HDR")
+          grep -q "$HDR_DIR" "$MF" || \
+            echo "subdir-ccflags-y += -I\$(srctree)/$HDR_DIR/" >> "$MF"
+        fi
+        echo "=== Patched Makefiles ==="
+        tail -2 drivers/misc/mediatek/aee/mrdump/Makefile
+        tail -2 drivers/mmc/host/mediatek/ComboA/Makefile
+        tail -2 drivers/misc/mediatek/base/power/ppm_v3/Makefile 2>/dev/null
+        tail -2 drivers/misc/mediatek/base/power/spm_v4/Makefile 2>/dev/null
     
     - name: Build kernel
       run: |
