@@ -98,3 +98,13 @@ jobs:
         echo
         echo "=== All GTP_* defines ==="
         grep -n -E "define\s+GTP_" "$FILE" | head -40
+    - name: Locate gt1x_pm_notifier
+      run: |
+        echo "=== Where is gt1x_pm_notifier referenced ==="
+        grep -rn "gt1x_pm_notifier" drivers/input/touchscreen/mediatek/GT1151/
+        echo
+        echo "=== Context around definition ==="
+        grep -rn -B10 "struct notifier_block gt1x_pm_notifier" drivers/input/touchscreen/mediatek/GT1151/
+        echo
+        echo "=== Context around usage in gt1x_tpd.c:644 ==="
+        sed -n '620,660p' drivers/input/touchscreen/mediatek/GT1151/gt1x_tpd.c
