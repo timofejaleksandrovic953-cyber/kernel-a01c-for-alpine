@@ -60,6 +60,19 @@ jobs:
         fi
         echo "=== After patch ==="
         cat "$MF"
+
+    - name: Patch mrdump Makefile for mrdump_private.h
+      run: |
+        MF="drivers/misc/mediatek/aee/mrdump/Makefile"
+        echo "=== Before ==="
+        cat "$MF"
+        # Добавляем -I на текущую директорию mrdump
+        # Используем subdir-ccflags-y, чтобы флаг попал во все объекты mrdump
+        if ! grep -q "drivers/misc/mediatek/aee/mrdump" "$MF"; then
+          echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/aee/mrdump/' >> "$MF"
+        fi
+        echo "=== After ==="
+        cat "$MF"
     
     - name: Build kernel
       run: |
