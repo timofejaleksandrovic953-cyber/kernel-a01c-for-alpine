@@ -66,7 +66,8 @@ jobs:
                         -Wno-error=dangling-pointer \
                         -Wno-error=address \
                         -Wno-error=shift-negative-value \
-                        -Wno-error=unused-but-set-variable"
+                        -Wno-error=unused-but-set-variable \
+                        -Wno-error=restrict"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
