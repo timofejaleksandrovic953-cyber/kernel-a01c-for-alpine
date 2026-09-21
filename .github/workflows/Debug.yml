@@ -83,3 +83,22 @@ jobs:
         echo
         echo "=== Files that reference gt1x_config ==="
         grep -rn "gt1x_config" . 2>/dev/null | head -20
+    - name: Search GTP macros in configs
+      run: |
+        echo "=== Files defining GTP_INT_TRIGGER ==="
+        grep -rln "GTP_INT_TRIGGER" drivers/input/touchscreen/mediatek/GT1151/include/
+        echo
+        echo "=== Files defining GTP_WAKEUP_LEVEL ==="
+        grep -rln "GTP_WAKEUP_LEVEL" drivers/input/touchscreen/mediatek/GT1151/include/
+        echo
+        echo "=== Also check for related config defines ==="
+        grep -rln "GTP_INT_" drivers/input/touchscreen/mediatek/GT1151/include/
+        echo
+        echo "=== Which configs mention 720 resolution? ==="
+        grep -rln "720\|1480\|1560" drivers/input/touchscreen/mediatek/GT1151/include/config*/
+        echo
+        echo "=== Content of each configN (summary) ==="
+        for f in drivers/input/touchscreen/mediatek/GT1151/include/config*/gt1x_config.h; do
+          echo "--- $f ---"
+          grep -E "GTP_INT|GTP_WAKEUP|GTP_CHANGE|GTP_WARP|_VERSION_" "$f" | head -10
+        done
