@@ -26,13 +26,10 @@ jobs:
 
     - name: Apply device config
       run: |
+        cp a01core.config .config
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
         # Проверяем, что .config на месте
-        if [ ! -f .config ]; then
-          echo "ERROR: .config не найден в корне репозитория!"
-          exit 1
-        fi
         # Адаптируем конфиг под текущие исходники ядра
         make ARCH=arm64 olddefconfig
 
