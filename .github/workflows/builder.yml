@@ -52,7 +52,21 @@ jobs:
       run: |
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
-        export KCFLAGS="-Wno-error"
+        export KCFLAGS="-Wno-error=array-bounds \
+                        -Wno-error=implicit-function-declaration \
+                        -Wno-error=array-compare \
+                        -Wno-error=unused-variable \
+                        -Wno-error=zero-length-bounds \
+                        -Wno-error=stringop-overflow \
+                        -Wno-error=stringop-overread \
+                        -Wno-error=stringop-truncation \
+                        -Wno-error=format-truncation \
+                        -Wno-error=maybe-uninitialized \
+                        -Wno-error=misleading-indentation \
+                        -Wno-error=dangling-pointer \
+                        -Wno-error=address \
+                        -Wno-error=shift-negative-value \
+                        -Wno-error=unused-but-set-variable"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
