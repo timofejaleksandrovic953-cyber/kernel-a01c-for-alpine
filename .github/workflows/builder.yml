@@ -35,6 +35,10 @@ jobs:
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         scripts/config --file .config --enable GTP_AUTO_UPDATE
         scripts/config --file .config --enable GTP_POWER_CTRL_SLEEP
+        # Отключаем Android-специфичный mrdump — не нужен для Alpine
+        scripts/config --file .config --disable MTK_AEE_MRDUMP
+        scripts/config --file .config --disable MTK_AEE_IPANIC
+        scripts/config --file .config --disable MTK_AEE_AED
         # Включаем CONFIG_GTP_CUSTOM_CFG — определяет GTP_INT_TRIGGER и GTP_WAKEUP_LEVEL
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         # Проверяем, что всё записалось
@@ -42,6 +46,20 @@ jobs:
         make ARCH=arm64 olddefconfig
         # Проверяем ещё раз — olddefconfig не должен откатить
         grep -E "GT1151|GTP_CUSTOM" .config
+
+    - name: Patch ComboA Makefile for autok.h
+      run: |
+        MF="drivers/mmc/host/mediatek/ComboA/Makefile"
+        # Проверим содержимое
+        echo "=== Current ComboA/Makefile ==="
+        cat "$MF"
+        echo
+        # Добавляем -I на директорию ComboA, чтобы autok.h был виден из mt6739/
+        if ! grep -q "ComboA/\"$" "$MF"; then
+          echo 'ccflags-y += -I$(srctree)/drivers/mmc/host/mediatek/ComboA/' >> "$MF"
+        fi
+        echo "=== After patch ==="
+        cat "$MF"
     
     - name: Build kernel
       run: |
