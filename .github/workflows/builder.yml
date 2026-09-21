@@ -34,7 +34,14 @@ jobs:
         # Проверяем, что .config на месте
         # Адаптируем конфиг под текущие исходники ядра
         make ARCH=arm64 olddefconfig
-
+    
+    - name: Debug drvgen
+      run: |
+        # Замените на реальный путь из drvgen.mk
+        find . -name "drvgen.pl" -o -name "drvgen" 2>/dev/null
+        # Попробуйте выполнить вручную, чтобы увидеть stderr
+        perl scripts/drvgen/drvgen.pl --help 2>&1 || true
+    
     - name: Build kernel
       run: |
         export ARCH=arm64
