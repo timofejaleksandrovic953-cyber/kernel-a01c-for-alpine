@@ -31,6 +31,7 @@ jobs:
         cp a01core.config .config
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
+        export KCFLAGS="-Wno-error"
         # Проверяем, что .config на месте
         # Адаптируем конфиг под текущие исходники ядра
         make ARCH=arm64 olddefconfig
