@@ -84,27 +84,19 @@ jobs:
         echo "=== Files that reference gt1x_config ==="
         grep -rn "gt1x_config" . 2>/dev/null | head -20
      
-    - name: Context around GTP_INT_TRIGGER
+    - name: Locate missing headers
       run: |
-        FILE="drivers/input/touchscreen/mediatek/GT1151/include/gt1x_tpd_common.h"
-        echo "=== Context around GTP_INT_TRIGGER ==="
-        grep -n -B10 -A5 "GTP_INT_TRIGGER" "$FILE"
+        echo "=== Search mrdump_private.h ==="
+        find . -name "mrdump_private.h" 2>/dev/null
         echo
-        echo "=== Context around GTP_WAKEUP_LEVEL ==="
-        grep -n -B10 -A5 "GTP_WAKEUP_LEVEL" "$FILE"
+        echo "=== Search autok.h ==="
+        find . -name "autok.h" 2>/dev/null
         echo
-        echo "=== All #if/#ifdef in the file ==="
-        grep -n -E "^\s*#(if|ifdef|ifndef|else|elif|endif)" "$FILE"
+        echo "=== Content of mrdump Makefile ==="
+        cat drivers/misc/mediatek/aee/mrdump/Makefile 2>/dev/null | head -20
         echo
-        echo "=== All GTP_* defines ==="
-        grep -n -E "define\s+GTP_" "$FILE" | head -40
-    - name: Locate gt1x_pm_notifier
-      run: |
-        echo "=== Where is gt1x_pm_notifier referenced ==="
-        grep -rn "gt1x_pm_notifier" drivers/input/touchscreen/mediatek/GT1151/
+        echo "=== Content of ComboA mt6739 Makefile ==="
+        cat drivers/mmc/host/mediatek/ComboA/mt6739/Makefile 2>/dev/null | head -20
         echo
-        echo "=== Context around definition ==="
-        grep -rn -B10 "struct notifier_block gt1x_pm_notifier" drivers/input/touchscreen/mediatek/GT1151/
-        echo
-        echo "=== Context around usage in gt1x_tpd.c:644 ==="
-        sed -n '620,660p' drivers/input/touchscreen/mediatek/GT1151/gt1x_tpd.c
+        echo "=== .config references ==="
+        grep -E "MRDUMP|AEE|MMC_MTK|COMBOA|AUTOK" .config | head -40
