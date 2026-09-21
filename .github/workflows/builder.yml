@@ -94,7 +94,8 @@ jobs:
                         -Wno-error=shift-negative-value \
                         -Wno-error=unused-but-set-variable \
                         -Wno-error=restrict \
-                        -Wno-error=undef"
+                        -Wno-error=undef \
+                        -Wno-error=enum-int-mismatch"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
