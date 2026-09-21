@@ -22,7 +22,9 @@ jobs:
         sudo apt-get install -y \
           gcc-aarch64-linux-gnu \
           bc bison flex libssl-dev \
-          make python3 git
+          make python3 git \
+          perl libxml-simple-perl libxml-libxml-perl \
+          libparse-yapp-perl libdbi-perl
 
     - name: Apply device config
       run: |
