@@ -32,6 +32,9 @@ jobs:
         # Пути к header-файлам драйвера
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
         scripts/config --file .config --set-str GT1151_CONFIG "config1"
+        scripts/config --file .config --enable GTP_CUSTOM_CFG
+        scripts/config --file .config --enable GTP_AUTO_UPDATE
+        scripts/config --file .config --enable GTP_POWER_CTRL_SLEEP
         # Включаем CONFIG_GTP_CUSTOM_CFG — определяет GTP_INT_TRIGGER и GTP_WAKEUP_LEVEL
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         # Проверяем, что всё записалось
@@ -59,7 +62,8 @@ jobs:
                         -Wno-error=address \
                         -Wno-error=shift-negative-value \
                         -Wno-error=unused-but-set-variable \
-                        -Wno-error=restrict"
+                        -Wno-error=restrict \
+                        -Wno-error=undef"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
