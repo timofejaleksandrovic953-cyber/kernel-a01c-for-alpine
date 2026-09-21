@@ -25,28 +25,22 @@ jobs:
           make python3 git \
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
-
-    - name: Apply device config
+    
+    - name: Prepare kernel config
       run: |
         cp a01core.config .config
+        # Задаём значения для путей драйвера GT1151
+        scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
+        scripts/config --file .config --set-str GT1151_CONFIG "config1"
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
         export KCFLAGS="-Wno-error=implicit-function-declaration"
-        # Проверяем, что .config на месте
-        # Адаптируем конфиг под текущие исходники ядра
+        # Проверяем, что значения записались
+        grep -E "GT1151" .config
+        # Применяем конфиг к исходникам
         make ARCH=arm64 olddefconfig
-    
-    - name: Debug - find drvgen and dtbo
-      run: |
-        echo "=== Contents of scripts/drvgen/ ==="
-        ls -la scripts/drvgen/ || echo "no dir"
-        echo "=== Search for drvgen anywhere ==="
-        find . -iname "*drvgen*" 2>/dev/null
-        echo "=== Search for dtbo references in Kconfig/Makefile ==="
-        grep -rn "DTBO\|dtboimg\|BUILD_ARM64_DT_OVERLAY" \
-          arch/arm64/Makefile \
-          arch/arm64/boot/Makefile \
-          scripts/Makefile 2>/dev/null | head -30
+        # Проверяем, что olddefconfig не откатил строковые опции
+        grep -E "GT1151" .config
     
     - name: Build kernel
       run: |
