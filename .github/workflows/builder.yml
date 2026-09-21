@@ -24,13 +24,16 @@ jobs:
           bc bison flex libssl-dev \
           make python3 git
 
-    - name: Apply custom config
+    - name: Apply device config
       run: |
-        # Если у вас есть config.gz, распакуйте его и положите в корень как .config
-        # Здесь используем defconfig из репозитория как основу
-        make ARCH=arm64 a01core_defconfig
-        # Включаем драйвер тачскрина GT1151 (если он есть в Kconfig)
-        # scripts/config --enable TOUCHSCREEN_MTK_GT1151
+        export ARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        # Проверяем, что .config на месте
+        if [ ! -f .config ]; then
+          echo "ERROR: .config не найден в корне репозитория!"
+          exit 1
+        fi
+        # Адаптируем конфиг под текущие исходники ядра
         make ARCH=arm64 olddefconfig
 
     - name: Build kernel
