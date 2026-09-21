@@ -29,18 +29,16 @@ jobs:
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
-        # Задаём значения для путей драйвера GT1151
+        # Пути к header-файлам драйвера
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
         scripts/config --file .config --set-str GT1151_CONFIG "config1"
-        export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export KCFLAGS="-Wno-error=implicit-function-declaration"
-        # Проверяем, что значения записались
-        grep -E "GT1151" .config
-        # Применяем конфиг к исходникам
+        # Включаем CONFIG_GTP_CUSTOM_CFG — определяет GTP_INT_TRIGGER и GTP_WAKEUP_LEVEL
+        scripts/config --file .config --enable GTP_CUSTOM_CFG
+        # Проверяем, что всё записалось
+        grep -E "GT1151|GTP_CUSTOM" .config
         make ARCH=arm64 olddefconfig
-        # Проверяем, что olddefconfig не откатил строковые опции
-        grep -E "GT1151" .config
+        # Проверяем ещё раз — olddefconfig не должен откатить
+        grep -E "GT1151|GTP_CUSTOM" .config
     
     - name: Build kernel
       run: |
