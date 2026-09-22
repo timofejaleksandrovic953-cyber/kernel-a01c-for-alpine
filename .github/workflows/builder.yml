@@ -41,6 +41,7 @@ jobs:
         scripts/config --file .config --disable MTK_AEE_AED
         # Включаем CONFIG_GTP_CUSTOM_CFG — определяет GTP_INT_TRIGGER и GTP_WAKEUP_LEVEL
         scripts/config --file .config --enable GTP_CUSTOM_CFG
+        scripts/config --file .config --disable PINCTRL_MTK_DEBUG
         # Проверяем, что всё записалось
         grep -E "GT1151|GTP_CUSTOM" .config
         make ARCH=arm64 olddefconfig
