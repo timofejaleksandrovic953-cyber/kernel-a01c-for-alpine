@@ -114,7 +114,8 @@ jobs:
                         -Wno-error=enum-int-mismatch \
                         -Wno-error=incompatible-pointer-types \
                         -I$(pwd)/drivers/mmc/host/mediatek/ComboA \
-                        -Wno-error=sizeof-array-div"
+                        -Wno-error=sizeof-array-div \
+                        -Wno-error=pointer-compare"
         make -j$(nproc) Image.gz-dtb
 
     - name: Build kernel modules
