@@ -58,6 +58,16 @@ jobs:
         echo "=== After ==="
         grep -n 'gpiolib\|linux/gpio/driver' "$F" || true
 
+    - name: Drop pinctrl debug file from build
+      run: |
+        MF="drivers/pinctrl/mediatek/Makefile"
+        echo "=== Before ==="
+        grep "PARIS" "$MF"
+        # Убираем только pinctrl-mtk-common-v2_debug.o, оставляя paris и common-v2
+        sed -i 's| pinctrl-mtk-common-v2_debug\.o||' "$MF"
+        echo "=== After ==="
+        grep "PARIS" "$MF"
+
     - name: Build kernel
       id: build
       continue-on-error: true
