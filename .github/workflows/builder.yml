@@ -75,19 +75,20 @@ jobs:
         tail -2 drivers/misc/mediatek/base/power/ppm_v3/Makefile 2>/dev/null
         tail -2 drivers/misc/mediatek/base/power/spm_v4/Makefile 2>/dev/null
 
-    - name: Patch cmdq Makefile
+    - name: Patch cmdq Makefile (explicit include)
       run: |
-        # cmdq_engine.h лежит где-то в cmdq/v3/
-        HDR=$(find drivers/misc/mediatek/cmdq/ -name "cmdq_engine.h" | head -1)
-        echo "cmdq_engine.h found at: $HDR"
-        HDR_DIR=$(dirname "$HDR")
-        echo "Will add: $HDR_DIR"
         MF="drivers/misc/mediatek/cmdq/v3/Makefile"
-        [ -f "$MF" ] || MF="drivers/misc/mediatek/cmdq/Makefile"
-        LINE="ccflags-y += -I\$(srctree)/$HDR_DIR/"
+        LINE='ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739/'
         grep -qF "$LINE" "$MF" || echo "$LINE" >> "$MF"
-        echo "=== $MF ==="
-        cat "$MF"
+        tail -3 "$MF"
+
+    - name: Fix pinctrl gpiolib.h include
+      run: |
+        F="drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c"
+        # Заменяем приватный путь на публичный <linux/gpio/driver.h>
+        sed -i 's|#include "../../gpio/gpiolib.h"|#include <linux/gpio/driver.h>|' "$F"
+        echo "=== First 25 lines ==="
+        head -25 "$F"
     
     - name: Build kernel
       run: |
