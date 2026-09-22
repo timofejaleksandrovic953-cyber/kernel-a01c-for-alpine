@@ -74,18 +74,32 @@ jobs:
         echo "=== After ==="
         grep "PARIS" "$MF"
 
-    - name: Fix TRACE_INCLUDE_PATH in modem_cldma_events.h
+    - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
-        F="drivers/misc/mediatek/eccci/hif/modem_cldma_events.h"
-        echo "=== Before ==="
-        grep -n "TRACE_INCLUDE_PATH\|TRACE_INCLUDE_FILE" "$F"
+        echo "=== Files with TRACE_INCLUDE_PATH . ==="
+        # Ищем все .h, где TRACE_INCLUDE_PATH определён как "."
+        FILES=$(grep -rl '^#define TRACE_INCLUDE_PATH \.$' \
+                drivers/misc/mediatek/ drivers/sound/ sound/ 2>/dev/null || true)
         
-        # Заменяем "." на путь ОТ КОРНЯ ядра (без ../../)
-        sed -i 's|^#define TRACE_INCLUDE_PATH \.$|#define TRACE_INCLUDE_PATH drivers/misc/mediatek/eccci/hif|' "$F"
+        if [ -z "$FILES" ]; then
+          echo "No files found — возможно, паттерн другой"
+          # Покажем вообще все вхождения для диагностики
+          grep -rn "TRACE_INCLUDE_PATH" drivers/misc/mediatek/ 2>/dev/null | head -30
+          exit 0
+        fi
         
-        echo "=== After ==="
-        grep -n "TRACE_INCLUDE_PATH\|TRACE_INCLUDE_FILE" "$F"
-
+        echo "$FILES" | while read -r f; do
+          # Путь от корня ядра (например, drivers/misc/mediatek/mmdvfs)
+          DIR=$(dirname "$f")
+          echo "Patching: $f → TRACE_INCLUDE_PATH $DIR"
+          sed -i "s|^#define TRACE_INCLUDE_PATH \.$|#define TRACE_INCLUDE_PATH $DIR|" "$f"
+        done
+        
+        echo "=== Verify ==="
+        echo "$FILES" | while read -r f; do
+          grep -n "TRACE_INCLUDE_PATH" "$f"
+        done
+        
     - name: Build kernel
       id: build
       continue-on-error: true
