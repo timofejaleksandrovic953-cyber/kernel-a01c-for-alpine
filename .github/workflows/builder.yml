@@ -74,6 +74,13 @@ jobs:
         echo "=== After ==="
         grep "PARIS" "$MF"
 
+    - name: Fix TRACE_INCLUDE_PATH in modem_cldma_events.h
+      run: |
+        F="drivers/misc/mediatek/eccci/hif/modem_cldma_events.h"
+        # Заменяем '.' на правильный относительный путь от include/trace/
+        sed -i 's|#define TRACE_INCLUDE_PATH \.|#define TRACE_INCLUDE_PATH ../../drivers/misc/mediatek/eccci/hif|' "$F"
+        grep -n "TRACE_INCLUDE_PATH" "$F"
+
     - name: Build kernel
       id: build
       continue-on-error: true
