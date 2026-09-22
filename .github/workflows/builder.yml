@@ -75,20 +75,44 @@ jobs:
         tail -2 drivers/misc/mediatek/base/power/ppm_v3/Makefile 2>/dev/null
         tail -2 drivers/misc/mediatek/base/power/spm_v4/Makefile 2>/dev/null
 
-    - name: Patch cmdq Makefile (explicit include)
+    - name: Patch MTK missing headers (verified)
       run: |
-        MF="drivers/misc/mediatek/cmdq/v3/Makefile"
-        LINE='ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739/'
+        set -x  # печатать каждую команду
+        
+        # ---- 1. cmdq: subdir-ccflags в РОДИТЕЛЬСКОМ Makefile ----
+        MF="drivers/misc/mediatek/cmdq/Makefile"
+        LINE='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739/'
         grep -qF "$LINE" "$MF" || echo "$LINE" >> "$MF"
+        echo "=== cmdq/Makefile tail ==="
         tail -3 "$MF"
-
-    - name: Fix pinctrl gpiolib.h include
-      run: |
+        
+        # ---- 2. eccci: subdir-ccflags в родителе eccci ----
+        # Сначала найдём, где лежит modem_sys.h
+        MSYS=$(find drivers/misc/mediatek/eccci -name "modem_sys.h" 2>/dev/null | head -1)
+        echo "modem_sys.h found at: $MSYS"
+        if [ -n "$MSYS" ]; then
+          MSYS_DIR=$(dirname "$MSYS")
+          MF="drivers/misc/mediatek/eccci/Makefile"
+          LINE="subdir-ccflags-y += -I\$(srctree)/$MSYS_DIR/"
+          grep -qF "$LINE" "$MF" || echo "$LINE" >> "$MF"
+          echo "=== eccci/Makefile tail ==="
+          tail -3 "$MF"
+        fi
+        
+        # ---- 3. pinctrl: заменить include на публичный ----
         F="drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c"
-        # Заменяем приватный путь на публичный <linux/gpio/driver.h>
-        sed -i 's|#include "../../gpio/gpiolib.h"|#include <linux/gpio/driver.h>|' "$F"
-        echo "=== First 25 lines ==="
-        head -25 "$F"
+        echo "=== Before ==="
+        grep -n "gpiolib" "$F"
+        # Более гибкий sed: заменяем любую строку, содержащую "../../gpio/gpiolib.h"
+        sed -i 's|#include *"\.\./\.\./gpio/gpiolib\.h".*|#include <linux/gpio/driver.h>|' "$F"
+        echo "=== After ==="
+        grep -n "gpiolib\|linux/gpio" "$F"
+        
+        # ---- Итоговая проверка ----
+        echo "=== Verification ==="
+        grep -c "subdir-ccflags-y" drivers/misc/mediatek/cmdq/Makefile
+        grep -c "subdir-ccflags-y" drivers/misc/mediatek/eccci/Makefile 2>/dev/null || echo "0"
+        grep -c "linux/gpio/driver.h" drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c
     
     - name: Build kernel
       run: |
