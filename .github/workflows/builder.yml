@@ -26,14 +26,6 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
-    - name: Add swap (защита от OOM)
-      run: |
-        sudo fallocate -l 4G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        free -h
-
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
