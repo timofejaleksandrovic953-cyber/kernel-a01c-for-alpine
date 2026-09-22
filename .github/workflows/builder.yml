@@ -25,133 +25,110 @@ jobs:
           make python3 git \
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
-    
+
+    - name: Add swap (защита от OOM)
+      run: |
+        sudo fallocate -l 4G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
+
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
-        # Пути к header-файлам драйвера
+
+        # GT1151 (тачскрин)
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
-        scripts/config --file .config --set-str GT1151_CONFIG "config1"
+        scripts/config --file .config --set-str GT1151_CONFIG  "config1"
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         scripts/config --file .config --enable GTP_AUTO_UPDATE
         scripts/config --file .config --enable GTP_POWER_CTRL_SLEEP
-        # Отключаем Android-специфичный mrdump — не нужен для Alpine
-        scripts/config --file .config --disable MTK_AEE_MRDUMP
-        scripts/config --file .config --disable MTK_AEE_IPANIC
-        scripts/config --file .config --disable MTK_AEE_AED
-        # Включаем CONFIG_GTP_CUSTOM_CFG — определяет GTP_INT_TRIGGER и GTP_WAKEUP_LEVEL
-        scripts/config --file .config --enable GTP_CUSTOM_CFG
-        scripts/config --file .config --disable PINCTRL_MTK_DEBUG
-        # Проверяем, что всё записалось
-        grep -E "GT1151|GTP_CUSTOM" .config
+
+        # Отключаем Android-only (может не сработать из-за select — тогда патчим include)
+        scripts/config --file .config --disable MTK_AEE_MRDUMP || true
+        scripts/config --file .config --disable MTK_AEE_IPANIC || true
+        scripts/config --file .config --disable MTK_AEE_AED    || true
+
         make ARCH=arm64 olddefconfig
-        # Проверяем ещё раз — olddefconfig не должен откатить
-        grep -E "GT1151|GTP_CUSTOM" .config
 
-    - name: Patch MTK Makefiles for missing headers
-      run: |
-        # mrdump
-        MF="drivers/misc/mediatek/aee/mrdump/Makefile"
-        grep -q "drivers/misc/mediatek/aee/mrdump" "$MF" || \
-          echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/aee/mrdump/' >> "$MF"
-        # ppm_v3
-        MF="drivers/misc/mediatek/base/power/ppm_v3/Makefile"
-        [ -f "$MF" ] && (grep -q "ppm_v3/src/mach/mt6739" "$MF" || \
-          echo 'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739/' >> "$MF")
-        # spm_v4 — пути узнаем из вашего debug-workflow
-        MF="drivers/misc/mediatek/base/power/spm_v4/Makefile"
-        if [ -f "$MF" ]; then
-          HDR=$(find drivers/misc/mediatek/base/power/spm_v4/ -name "mtk_spm_sleep_internal.h" | head -1)
-          HDR_DIR=$(dirname "$HDR")
-          grep -q "$HDR_DIR" "$MF" || \
-            echo "subdir-ccflags-y += -I\$(srctree)/$HDR_DIR/" >> "$MF"
-        fi
-        MF="drivers/misc/mediatek/cmdq/v3/Makefile"
-        HDR_DIR=$(dirname "$(find drivers/misc/mediatek/cmdq/ -name "cmdq_engine.h" | head -1)")
-        echo "ccflags-y += -I\$(srctree)/$HDR_DIR/" >> "$MF"
-        echo "=== Patched Makefiles ==="
-        tail -2 drivers/misc/mediatek/aee/mrdump/Makefile
-        tail -2 drivers/mmc/host/mediatek/ComboA/Makefile
-        tail -2 drivers/misc/mediatek/base/power/ppm_v3/Makefile 2>/dev/null
-        tail -2 drivers/misc/mediatek/base/power/spm_v4/Makefile 2>/dev/null
+        echo "=== Final config check ==="
+        grep -E "GT1151|GTP_CUSTOM|MTK_AEE" .config || true
 
-    - name: Patch MTK missing headers (verified)
+    - name: Patch pinctrl include
       run: |
-        set -x  # печатать каждую команду
-        
-        # ---- 1. cmdq: subdir-ccflags в РОДИТЕЛЬСКОМ Makefile ----
-        MF="drivers/misc/mediatek/cmdq/Makefile"
-        LINE='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739/'
-        grep -qF "$LINE" "$MF" || echo "$LINE" >> "$MF"
-        echo "=== cmdq/Makefile tail ==="
-        tail -3 "$MF"
-        
-        # ---- 2. eccci: subdir-ccflags в родителе eccci ----
-        # Сначала найдём, где лежит modem_sys.h
-        MSYS=$(find drivers/misc/mediatek/eccci -name "modem_sys.h" 2>/dev/null | head -1)
-        echo "modem_sys.h found at: $MSYS"
-        if [ -n "$MSYS" ]; then
-          MSYS_DIR=$(dirname "$MSYS")
-          MF="drivers/misc/mediatek/eccci/Makefile"
-          LINE="subdir-ccflags-y += -I\$(srctree)/$MSYS_DIR/"
-          grep -qF "$LINE" "$MF" || echo "$LINE" >> "$MF"
-          echo "=== eccci/Makefile tail ==="
-          tail -3 "$MF"
-        fi
-        
-        # ---- 3. pinctrl: заменить include на публичный ----
+        # Единственный реальный патч: приватный <../../gpio/gpiolib.h> → публичный
+        # В файле угловые скобки <>, поэтому матчим и <>, и "".
         F="drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c"
         echo "=== Before ==="
-        grep -n "gpiolib" "$F"
-        # Более гибкий sed: заменяем любую строку, содержащую "../../gpio/gpiolib.h"
-        sed -i 's|#include *"\.\./\.\./gpio/gpiolib\.h".*|#include <linux/gpio/driver.h>|' "$F"
+        grep -n 'gpiolib' "$F" || true
+        sed -i 's|^#include *[<"]\.\./\.\./gpio/gpiolib\.h[>"].*|#include <linux/gpio/driver.h>|' "$F"
         echo "=== After ==="
-        grep -n "gpiolib\|linux/gpio" "$F"
-        
-        # ---- Итоговая проверка ----
-        echo "=== Verification ==="
-        grep -c "subdir-ccflags-y" drivers/misc/mediatek/cmdq/Makefile
-        grep -c "subdir-ccflags-y" drivers/misc/mediatek/eccci/Makefile 2>/dev/null || echo "0"
-        grep -c "linux/gpio/driver.h" drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c
-    
+        grep -n 'gpiolib\|linux/gpio/driver' "$F" || true
+
     - name: Build kernel
+      id: build
+      continue-on-error: true
       run: |
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
+        # KCFLAGS — стандартный способ. $(srctree) — переменная make,
+        # экранируем \$, чтобы shell её не трогал.
         export KCFLAGS="-Wno-error=array-bounds \
-                        -Wno-error=implicit-function-declaration \
-                        -Wno-error=array-compare \
-                        -Wno-error=unused-variable \
-                        -Wno-error=zero-length-bounds \
-                        -Wno-error=stringop-overflow \
-                        -Wno-error=stringop-overread \
-                        -Wno-error=stringop-truncation \
-                        -Wno-error=format-truncation \
-                        -Wno-error=maybe-uninitialized \
-                        -Wno-error=misleading-indentation \
-                        -Wno-error=dangling-pointer \
-                        -Wno-error=address \
-                        -Wno-error=shift-negative-value \
-                        -Wno-error=unused-but-set-variable \
-                        -Wno-error=restrict \
-                        -Wno-error=undef \
-                        -Wno-error=enum-int-mismatch \
-                        -Wno-error=incompatible-pointer-types \
-                        -I$(pwd)/drivers/mmc/host/mediatek/ComboA \
-                        -Wno-error=sizeof-array-div \
-                        -Wno-error=pointer-compare"
-        make -j$(nproc) Image.gz-dtb
+          -Wno-error=implicit-function-declaration \
+          -Wno-error=array-compare \
+          -Wno-error=unused-variable \
+          -Wno-error=zero-length-bounds \
+          -Wno-error=stringop-overflow \
+          -Wno-error=stringop-overread \
+          -Wno-error=stringop-truncation \
+          -Wno-error=format-truncation \
+          -Wno-error=maybe-uninitialized \
+          -Wno-error=misleading-indentation \
+          -Wno-error=dangling-pointer \
+          -Wno-error=address \
+          -Wno-error=shift-negative-value \
+          -Wno-error=unused-but-set-variable \
+          -Wno-error=restrict \
+          -Wno-error=undef \
+          -Wno-error=enum-int-mismatch \
+          -Wno-error=incompatible-pointer-types \
+          -Wno-error=sizeof-array-div \
+          -Wno-error=pointer-compare \
+          -I\$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739 \
+          -I\$(srctree)/drivers/misc/mediatek/eccci \
+          -I\$(srctree)/drivers/misc/mediatek/aee/mrdump \
+          -I\$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739 \
+          -I\$(srctree)/drivers/misc/mediatek/base/power/spm_v4 \
+          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
+          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
+          -I\$(srctree)/drivers/pinctrl/mediatek"
+        make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
+        exit ${PIPESTATUS[0]}
 
-    - name: Build kernel modules
+    - name: Show errors (if build failed)
+      if: steps.build.outcome == 'failure'
       run: |
-        export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        make -j$(nproc) modules
+        echo "=== First errors ==="
+        grep -n -m20 -E "error:|fatal error" build.log || true
+        echo
+        echo "=== Context around first error ==="
+        FIRST=$(grep -n -m1 -E "error:|fatal error" build.log | cut -d: -f1)
+        if [ -n "$FIRST" ]; then
+          START=$((FIRST-10)); [ $START -lt 1 ] && START=1
+          sed -n "${START},$((FIRST+15))p" build.log
+        fi
 
-    - name: Upload kernel artifact
+    - name: Upload kernel
+      if: steps.build.outcome == 'success'
       uses: actions/upload-artifact@v4
       with:
-        name: a01core-kernel
-        path: |
-          arch/arm64/boot/Image.gz-dtb
-          drivers/input/touchscreen/**/*.ko
+        name: a01core-Image.gz-dtb
+        path: arch/arm64/boot/Image.gz-dtb
+
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
