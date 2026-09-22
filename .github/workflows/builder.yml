@@ -65,6 +65,9 @@ jobs:
           grep -q "$HDR_DIR" "$MF" || \
             echo "subdir-ccflags-y += -I\$(srctree)/$HDR_DIR/" >> "$MF"
         fi
+        MF="drivers/misc/mediatek/cmdq/v3/Makefile"
+        HDR_DIR=$(dirname "$(find drivers/misc/mediatek/cmdq/ -name "cmdq_engine.h" | head -1)")
+        echo "ccflags-y += -I\$(srctree)/$HDR_DIR/" >> "$MF"
         echo "=== Patched Makefiles ==="
         tail -2 drivers/misc/mediatek/aee/mrdump/Makefile
         tail -2 drivers/mmc/host/mediatek/ComboA/Makefile
