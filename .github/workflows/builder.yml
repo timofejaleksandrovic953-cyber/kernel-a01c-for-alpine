@@ -41,6 +41,12 @@ jobs:
         scripts/config --file .config --disable MTK_AEE_MRDUMP || true
         scripts/config --file .config --disable MTK_AEE_IPANIC || true
         scripts/config --file .config --disable MTK_AEE_AED    || true
+        scripts/config --file .config --disable SEC_DEBUG || true
+        scripts/config --file .config --disable SEC_DEBUG_2 || true
+        scripts/config --file .config --disable SEC_DEBUG_USER || true
+        scripts/config --file .config --disable SEC_DEBUG_EXTRA_INFO || true
+        scripts/config --file .config --disable SEC_DEBUG_PANIC_ALWAYS || true
+        scripts/config --file .config --disable SEC_DEBUG_SOFTLOCKUP_DETECTOR || true
 
         make ARCH=arm64 olddefconfig
 
@@ -105,7 +111,9 @@ jobs:
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
           -I\$(srctree)/drivers/pinctrl/mediatek \
-          -I\$(srctree)/drivers/misc/mediatek/eccci/hif"
+          -I\$(srctree)/drivers/misc/mediatek/eccci/hif \
+          -I\$(srctree)/drivers/misc/mediatek/freqhopping \
+          -I\$(srctree)/drivers/misc/mediatek/freqhopping/mt6739"
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
 
