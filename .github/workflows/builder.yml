@@ -118,7 +118,8 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/freqhopping/mt6739 \
           -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
           -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/m4u/mt6739"
+          -I\$(srctree)/drivers/misc/mediatek/m4u/mt6739 \
+          -I\$(srctree)/include/trace"
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
 
