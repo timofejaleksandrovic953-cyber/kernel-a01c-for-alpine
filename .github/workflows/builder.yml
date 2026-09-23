@@ -196,6 +196,8 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/video/common \
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739/videox \
+          -I\$(srctree)/drivers/misc/mediatek/mmp \
+          -I\$(srctree)/drivers/misc/mediatek/mmp/inc \
           -I\$(srctree)/drivers/misc/mediatek/timer/timesync"
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
