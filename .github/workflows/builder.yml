@@ -100,14 +100,20 @@ jobs:
           grep -n "TRACE_INCLUDE_PATH" "$f"
         done
 
-    - name: Remove entire GPU directory
+    - name: Remove GPU directory and patch Kconfig
       run: |
-        # Удаляем и PowerVR (rgx), и Mali, и всё что внутри
+        # Удаляем директорию
         rm -rf drivers/misc/mediatek/gpu/
         
-        # Проверим, что ссылок больше нет
-        grep -rn "mediatek/gpu\b" drivers/Makefile drivers/misc/mediatek/Makefile 2>/dev/null || echo "clean"
-        ls drivers/misc/mediatek/ | grep -i gpu || echo "gpu directory gone"
+        # Комментируем source на gpu/Kconfig
+        KF="drivers/misc/mediatek/Kconfig"
+        sed -i '/mediatek\/gpu\/Kconfig/ s/^/# /' "$KF"
+        
+        # Проверяем результат
+        echo "=== Line 407 area ==="
+        sed -n '405,410p' "$KF"
+        echo "=== Any remaining gpu references ==="
+        grep -rn "mediatek/gpu" "$KF" drivers/Kconfig 2>/dev/null || echo "clean"
         
     - name: Build kernel
       id: build
