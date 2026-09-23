@@ -25,32 +25,44 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
-    - name: Download old GCC 4.9 toolchain (LineageOS mirror)
+    - name: Download old GCC 4.9 toolchain
       run: |
-        set -x
-        # LineageOS зеркалит AOSP prebuilt GCC 4.9 — обычно надёжнее
-        # чем android.googlesource.com (иногда требует LFS/Gitiles archive)
-        git clone --depth=1 \
-          https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
-          toolchain-repo
-        echo "=== Repo contents ==="
-        ls -la toolchain-repo/ | head -20
-        echo "=== Find gcc binary ==="
-        # Ищем любой бинарь gcc (может называться gcc или gcc-4.9)
-        GCC_BIN=$(find "$(pwd)/toolchain-repo" -type f -name "aarch64-linux-android-gcc*" ! -name "*.d" 2>/dev/null | head -1)
-        if [ -z "$GCC_BIN" ]; then
-          echo "=== GCC NOT FOUND. Full tree: ==="
-          find toolchain-repo -maxdepth 3 -type d | head -30
-          find toolchain-repo -type f -name "*gcc*" | head -10
+        set -e
+        # Пробуем несколько источников — LineageOS зеркало обычно самое надёжное
+        URLS=(
+          "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git"
+          "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9"
+        )
+        
+        CLONED=0
+        for url in "${URLS[@]}"; do
+          echo "=== Trying: $url ==="
+          rm -rf toolchain-repo
+          if git clone --depth=1 "$url" toolchain-repo 2>&1; then
+            if [ -d "toolchain-repo/bin" ] && \
+               ls toolchain-repo/bin/aarch64-linux-android-gcc* >/dev/null 2>&1; then
+              echo "=== SUCCESS: binaries present ==="
+              CLONED=1
+              break
+            else
+              echo "=== Cloned but no gcc binary in bin/ — trying next ==="
+              ls -la toolchain-repo/ | head -10
+            fi
+          fi
+        done
+        
+        if [ "$CLONED" -ne 1 ]; then
+          echo "=== FAILED: could not obtain toolchain ==="
           exit 1
         fi
-        TOOLCHAIN_BIN=$(dirname "$GCC_BIN")
-        echo "GCC binary:  $GCC_BIN"
-        echo "Toolchain bin: $TOOLCHAIN_BIN"
+        
+        TOOLCHAIN_BIN="$(pwd)/toolchain-repo/bin"
         echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
-        "$GCC_BIN" --version | head -1
-        echo "=== Assembler ==="
-        ls "$TOOLCHAIN_BIN/" | grep -E "^aarch64-linux-android-(as|ld)$"
+        
+        echo "=== Toolchain contents ==="
+        ls -la "$TOOLCHAIN_BIN" | head -20
+        echo "=== GCC version ==="
+        "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" --version | head -1
 
     - name: Clean working tree
       run: |
@@ -174,6 +186,37 @@ jobs:
         echo "=== After ==="
         grep -n 'queue.h' "$F" || true
 
+    - name: Fix ssbd.c is_compat_thread
+      run: |
+        F="arch/arm64/kernel/ssbd.c"
+        echo "=== Before (first 40 lines) ==="
+        head -40 "$F"
+        
+        # CONFIG_COMPAT=n в нашем .config, а функция is_compat_thread
+        # объявлена только под #ifdef CONFIG_COMPAT. Оборачиваем вызов.
+        python3 - <<'PYEOF'
+        import re
+        path = "arch/arm64/kernel/ssbd.c"
+        with open(path) as f:
+            src = f.read()
+        
+        # Оборачиваем вызов is_compat_thread(...) в #ifdef CONFIG_COMPAT
+        pattern = re.compile(
+            r'(?m)^(\s*)(if\s*\(\s*is_compat_thread\([^\n]*)$',
+        )
+        def repl(m):
+            indent, line = m.group(1), m.group(2)
+            return f"{indent}#ifdef CONFIG_COMPAT\n{indent}{line}\n{indent}#endif"
+        
+        new_src, count = pattern.subn(repl, src)
+        with open(path, "w") as f:
+            f.write(new_src)
+        print(f"Patched {count} occurrence(s) of is_compat_thread")
+        PYEOF
+        
+        echo "=== After ==="
+        sed -n '10,45p' "$F"
+
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
         FILES=$(grep -rl '^#define TRACE_INCLUDE_PATH \.$' \
@@ -210,7 +253,7 @@ jobs:
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
-        # Cap 500 — достаточно, чтобы ComboA попал
+        # Cap 500 — достаточно, чтобы ComboA и все mt6739-пути попали
         cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
         echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
         
@@ -234,18 +277,35 @@ jobs:
         export ARCH=arm64
         export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_BIN:$PATH"
+        
+        # === ЖЁСТКАЯ ПРОВЕРКА: если тулчейн не подключился — падаем сразу ===
+        if [ -z "$TOOLCHAIN_BIN" ] || [ ! -x "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" ]; then
+          echo "FATAL: Toolchain not found at $TOOLCHAIN_BIN"
+          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
+          ls -la "$TOOLCHAIN_BIN" 2>/dev/null || echo "(directory does not exist)"
+          exit 1
+        fi
+        
+        echo "=== Toolchain check ==="
+        ${CROSS_COMPILE}gcc --version | head -1
+        which ${CROSS_COMPILE}gcc
+        
+        # Проверяем, что версия GCC именно старая (4.9-9.x), а не 12+
+        GCC_VER=$(${CROSS_COMPILE}gcc -dumpversion)
+        echo "Detected GCC version: $GCC_VER"
+        case "$GCC_VER" in
+          4.9*|5.*|6.*|7.*|8.*|9.*) echo "OK — old GCC, ядро 4.x поддерживается" ;;
+          *) echo "FATAL: GCC version $GCC_VER слишком новый для ядра 4.x"
+             exit 1 ;;
+        esac
+        
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
-        echo "=== Using toolchain ==="
-        ${CROSS_COMPILE}gcc --version | head -1
-        which ${CROSS_COMPILE}gcc
-        
         # KCFLAGS — минимум для старого GCC 4.9.4.
-        # GCC 4.9 не создаёт большинство -Werror проблем нового GCC.
         # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
-        # иначе shell разорвёт строку и получится "Unterminated quoted string".
+        # иначе shell разорвёт строку → "Unterminated quoted string".
         export KCFLAGS="-Wno-error \
           -I\$(srctree)"
         
