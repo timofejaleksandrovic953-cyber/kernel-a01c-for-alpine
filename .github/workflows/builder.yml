@@ -26,128 +26,160 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
-    - name: Clean working tree (remove cached/generated files)
+    - name: Clean working tree
       run: |
-        # Убираем всё, что могло остаться от предыдущих сборок
         rm -rf include/config include/generated
         rm -rf arch/arm64/boot/Image*
-        rm -rf arch/arm64/boot/dts
         rm -f .config .config.old .version
-        rm -f Module.symvers modules.order
-        rm -f build.log
-        
-        # Убираем все объектники и служебные файлы, если они случайно
-        # попали в коммит (бывает при неаккуратном git add -A)
+        rm -f Module.symvers modules.order build.log
         find . -name "*.o" -not -path "./.git/*" -delete 2>/dev/null || true
         find . -name "*.cmd" -not -path "./.git/*" -delete 2>/dev/null || true
-        find . -name "*.a" -not -path "./.git/*" -delete 2>/dev/null || true
-        find . -name ".tmp_*" -not -path "./.git/*" -delete 2>/dev/null || true
         find . -name "*.mod.c" -not -path "./.git/*" -delete 2>/dev/null || true
-        find . -name "modules.order" -not -path "./.git/*" -delete 2>/dev/null || true
-        
-        echo "=== После очистки ==="
+        echo "=== Cleaned ==="
         ls -la | head -10
-        ls -la .config 2>/dev/null || echo ".config удалён"
 
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
 
-        # GT1151 (тачскрин)
+        # === Тачскрин GT1151 ===
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
         scripts/config --file .config --set-str GT1151_CONFIG  "config1"
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         scripts/config --file .config --enable GTP_AUTO_UPDATE
         scripts/config --file .config --enable GTP_POWER_CTRL_SLEEP
 
-        # Отключаем Android-only (может не сработать из-за select — тогда патчим include)
-        scripts/config --file .config --disable MTK_AEE_MRDUMP || true
-        scripts/config --file .config --disable MTK_AEE_IPANIC || true
-        scripts/config --file .config --disable MTK_AEE_AED    || true
-        scripts/config --file .config --disable SEC_DEBUG || true
-        scripts/config --file .config --disable SEC_DEBUG_2 || true
-        scripts/config --file .config --disable SEC_DEBUG_USER || true
-        scripts/config --file .config --disable SEC_DEBUG_EXTRA_INFO || true
-        scripts/config --file .config --disable SEC_DEBUG_PANIC_ALWAYS || true
-        scripts/config --file .config --disable SEC_DEBUG_SOFTLOCKUP_DETECTOR || true
-        # LOCALVERSION с пробелами ломает mkcompile_h — заменяем на безопасное значение
-        scripts/config --file .config --set-str LOCALVERSION "-KatsuragiOC"
+        # === Отключаем Android-only ===
+        for opt in MTK_AEE_MRDUMP MTK_AEE_IPANIC MTK_AEE_AED \
+                   SEC_DEBUG SEC_DEBUG_2 SEC_DEBUG_USER \
+                   SEC_DEBUG_EXTRA_INFO SEC_DEBUG_PANIC_ALWAYS \
+                   SEC_DEBUG_SOFTLOCKUP_DETECTOR; do
+          scripts/config --file .config --disable "$opt" 2>/dev/null || true
+        done
+
+        # === Модем не нужен (звонки в Alpine не работают без Android-стека) ===
+        for opt in MTK_CCCI_DRIVER MTK_CCCI_DRIVER_MTK MTK_MD_CCIF \
+                   MTK_RILD MTK_MD_POWER_OFF MTK_MODEM_SUPPORT \
+                   MTK_CCCI_OPT MTK_MD1_SUPPORT MTK_MD2_SUPPORT \
+                   MTK_CCCI_FS MTK_MD_CCIF_DRV; do
+          scripts/config --file .config --disable "$opt" 2>/dev/null || true
+        done
+
+        # === LOCALVERSION без пробелов (иначе ломает mkcompile_h) ===
+        scripts/config --file .config --set-str LOCALVERSION "-a01core"
 
         make ARCH=arm64 olddefconfig
 
         echo "=== Final config check ==="
-        grep -E "GT1151|GTP_CUSTOM|MTK_AEE" .config || true
+        grep -E "GT1151|GTP_CUSTOM|MTK_AEE|MTK_CCCI|LOCALVERSION" .config || true
 
     - name: Patch pinctrl include
       run: |
-        # Единственный реальный патч: приватный <../../gpio/gpiolib.h> → публичный
-        # В файле угловые скобки <>, поэтому матчим и <>, и "".
         F="drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c"
-        echo "=== Before ==="
-        grep -n 'gpiolib' "$F" || true
+        echo "=== Before ==="; grep -n 'gpiolib' "$F" || true
         sed -i 's|^#include *[<"]\.\./\.\./gpio/gpiolib\.h[>"].*|#include <linux/gpio/driver.h>|' "$F"
-        echo "=== After ==="
-        grep -n 'gpiolib\|linux/gpio/driver' "$F" || true
+        echo "=== After ==="; grep -n 'gpiolib\|linux/gpio/driver' "$F" || true
 
     - name: Drop pinctrl debug file from build
       run: |
         MF="drivers/pinctrl/mediatek/Makefile"
-        echo "=== Before ==="
-        grep "PARIS" "$MF"
-        # Убираем только pinctrl-mtk-common-v2_debug.o, оставляя paris и common-v2
+        echo "=== Before ==="; grep "PARIS" "$MF"
         sed -i 's| pinctrl-mtk-common-v2_debug\.o||' "$MF"
-        echo "=== After ==="
-        grep "PARIS" "$MF"
+        echo "=== After ==="; grep "PARIS" "$MF"
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
-        echo "=== Files with TRACE_INCLUDE_PATH . ==="
-        # Ищем все .h, где TRACE_INCLUDE_PATH определён как "."
         FILES=$(grep -rl '^#define TRACE_INCLUDE_PATH \.$' \
-                drivers/misc/mediatek/ drivers/sound/ sound/ 2>/dev/null || true)
+                drivers/misc/mediatek/ sound/ 2>/dev/null || true)
         
         if [ -z "$FILES" ]; then
-          echo "No files found — возможно, паттерн другой"
-          # Покажем вообще все вхождения для диагностики
-          grep -rn "TRACE_INCLUDE_PATH" drivers/misc/mediatek/ 2>/dev/null | head -30
-          exit 0
+          echo "No files with TRACE_INCLUDE_PATH . — OK"
+        else
+          echo "$FILES" | while read -r f; do
+            DIR=$(dirname "$f")
+            echo "Patching: $f → $DIR"
+            sed -i "s|^#define TRACE_INCLUDE_PATH \.$|#define TRACE_INCLUDE_PATH $DIR|" "$f"
+          done
         fi
-        
-        echo "$FILES" | while read -r f; do
-          # Путь от корня ядра (например, drivers/misc/mediatek/mmdvfs)
-          DIR=$(dirname "$f")
-          echo "Patching: $f → TRACE_INCLUDE_PATH $DIR"
-          sed -i "s|^#define TRACE_INCLUDE_PATH \.$|#define TRACE_INCLUDE_PATH $DIR|" "$f"
-        done
         
         echo "=== Verify ==="
         echo "$FILES" | while read -r f; do
-          grep -n "TRACE_INCLUDE_PATH" "$f"
+          [ -n "$f" ] && grep -n "TRACE_INCLUDE_PATH" "$f"
         done
 
     - name: Remove GPU directory and patch Kconfig
       run: |
-        # Удаляем директорию
         rm -rf drivers/misc/mediatek/gpu/
-        
-        # Комментируем source на gpu/Kconfig
         KF="drivers/misc/mediatek/Kconfig"
         sed -i '/mediatek\/gpu\/Kconfig/ s/^/# /' "$KF"
-        
-        # Проверяем результат
-        echo "=== Line 407 area ==="
-        sed -n '405,410p' "$KF"
         echo "=== Any remaining gpu references ==="
         grep -rn "mediatek/gpu" "$KF" drivers/Kconfig 2>/dev/null || echo "clean"
+
+    - name: Remove modem directories
+      run: |
+        # Убираем весь модемный стек
+        rm -rf drivers/misc/mediatek/eccci/
+        rm -rf drivers/misc/mediatek/modem/
+        rm -rf drivers/misc/mediatek/ccci_util/
         
+        # Комментируем Kconfig ссылки
+        for kf in drivers/misc/mediatek/Kconfig drivers/Kconfig; do
+          [ -f "$kf" ] && sed -i '/mediatek\/eccci\/Kconfig/ s/^/# /' "$kf"
+          [ -f "$kf" ] && sed -i '/mediatek\/modem\/Kconfig/ s/^/# /' "$kf"
+        done
+        
+        # Убираем obj-y += eccci/ и подобное из Makefile
+        [ -f drivers/misc/mediatek/Makefile ] && sed -i '/eccci/d; /ccci_util/d' drivers/misc/mediatek/Makefile
+        
+        echo "=== Check ==="
+        grep -rn "eccci\|mediatek/modem" drivers/misc/mediatek/Kconfig drivers/misc/mediatek/Makefile 2>/dev/null || echo "clean"
+
+    - name: Auto-collect MTK include paths
+      run: |
+        # Находим все .h в MTK-областях и добавляем их директории в KBUILD_CFLAGS
+        find drivers/misc/mediatek drivers/staging/android/ion \
+             sound/soc/mediatek drivers/mmc/host/mediatek \
+             drivers/pinctrl/mediatek \
+             -type f -name "*.h" 2>/dev/null \
+          | xargs -n1 dirname | sort -u > /tmp/mtk_all.txt
+        
+        # Убираем мусорные пути
+        grep -vE "Documentation|/tools/|/test" /tmp/mtk_all.txt > /tmp/mtk_clean.txt
+        
+        TOTAL=$(wc -l < /tmp/mtk_clean.txt)
+        echo "Found $TOTAL directories with headers"
+        
+        # Приоритизируем mt6739-специфичные пути
+        grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
+        grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
+        
+        # Собираем: сначала mt6739, потом остальные, кап на 250 путей
+        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -250 > /tmp/mtk_final.txt
+        echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
+        
+        # Добавляем в корневой Makefile как KBUILD_CFLAGS
+        echo "" >> Makefile
+        echo "# Alpine port: auto-collected MTK include paths" >> Makefile
+        while read -r d; do
+          echo "KBUILD_CFLAGS += -I\$(srctree)/$d" >> Makefile
+        done < /tmp/mtk_final.txt
+        
+        echo "=== Makefile tail ==="
+        tail -5 Makefile
+        echo "=== Total KBUILD_CFLAGS added ==="
+        grep -c "KBUILD_CFLAGS += -I" Makefile
+
     - name: Build kernel
       id: build
       continue-on-error: true
       run: |
         export ARCH=arm64
         export CROSS_COMPILE=aarch64-linux-gnu-
-        # KCFLAGS — стандартный способ. $(srctree) — переменная make,
-        # экранируем \$, чтобы shell её не трогал.
+        export KBUILD_BUILD_USER="builder"
+        export KBUILD_BUILD_HOST="localhost"
+        export KBUILD_BUILD_VERSION="1"
+        # KCFLAGS — только -Wno-error и минимум -I для критичных мест.
+        # Основные -I добавляются через KBUILD_CFLAGS в Makefile.
         export KCFLAGS="-Wno-error=array-bounds \
           -Wno-error=implicit-function-declaration \
           -Wno-error=array-compare \
@@ -169,36 +201,7 @@ jobs:
           -Wno-error=incompatible-pointer-types \
           -Wno-error=sizeof-array-div \
           -Wno-error=pointer-compare \
-          -I\$(srctree)/drivers/misc/mediatek/cmdq/v3/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/eccci \
-          -I\$(srctree)/drivers/misc/mediatek/aee/mrdump \
-          -I\$(srctree)/drivers/misc/mediatek/base/power/ppm_v3/src/mach/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/base/power/spm_v4 \
-          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
-          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
-          -I\$(srctree)/drivers/pinctrl/mediatek \
-          -I\$(srctree)/drivers/misc/mediatek/eccci/hif \
-          -I\$(srctree)/drivers/misc/mediatek/freqhopping \
-          -I\$(srctree)/drivers/misc/mediatek/leds \
-          -I\$(srctree)/drivers/staging/android/ion \
-          -I\$(srctree)/drivers/misc/mediatek/freqhopping/mt6739 \
-          -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
-          -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/m4u/mt6739 \
-          -I\$(srctree) \
-          -I\$(srctree)/drivers/misc/mediatek/smi \
-          -I\$(srctree)/drivers/misc/mediatek/include \
-          -I\$(srctree)/drivers/misc/mediatek/include/mt-plat \
-          -I\$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739/include \
-          -I\$(srctree)/drivers/misc/mediatek/uart/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/video \
-          -I\$(srctree)/drivers/misc/mediatek/video/common \
-          -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/video/mt6739/videox \
-          -I\$(srctree)/drivers/misc/mediatek/mmp \
-          -I\$(srctree)/drivers/misc/mediatek/mmp/inc \
-          -I\$(srctree)/drivers/misc/mediatek/timer/timesync"
+          -I\$(srctree)"
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
 
