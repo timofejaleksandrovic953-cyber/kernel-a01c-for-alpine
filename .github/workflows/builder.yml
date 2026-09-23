@@ -28,17 +28,25 @@ jobs:
     - name: Download old GCC 4.9 toolchain (AOSP prebuilt)
       run: |
         # AOSP prebuilt GCC 4.9 для aarch64 — стандарт для MTK-ядер 4.x
-        # (Linaro переехал, их старые URL отдают HTML вместо tar.xz)
         git clone --depth=1 \
           https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
         
-        TOOLCHAIN_DIR="$(pwd)/aarch64-linux-android-4.9/bin"
+        # Динамически находим реальную директорию с бинарём gcc
+        # (в репо вложенная структура, поэтому фиксированный путь не годится)
+        GCC_BIN=$(find "$(pwd)/aarch64-linux-android-4.9" -name "aarch64-linux-android-gcc" -type f | head -1)
+        TOOLCHAIN_BIN=$(dirname "$GCC_BIN")
+        TOOLCHAIN_DIR=$(dirname "$TOOLCHAIN_BIN")
+        
+        echo "GCC binary:    $GCC_BIN"
+        echo "Toolchain bin: $TOOLCHAIN_BIN"
+        echo "Toolchain dir: $TOOLCHAIN_DIR"
+        
+        echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
         echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
         
-        echo "=== Binaries ==="
-        ls "$TOOLCHAIN_DIR/" | head -10
-        echo "=== GCC version ==="
-        "$TOOLCHAIN_DIR/aarch64-linux-android-gcc" --version | head -1
+        "$GCC_BIN" --version | head -1
+        echo "=== Assembler version ==="
+        "$TOOLCHAIN_BIN/aarch64-linux-android-as" --version | head -1
 
     - name: Clean working tree
       run: |
@@ -100,6 +108,10 @@ jobs:
       run: |
         cp a01core.config .config
 
+        # === Старый GCC 4.9 не поддерживает -fstack-protector-strong ===
+        scripts/config --file .config --disable CC_STACKPROTECTOR_STRONG || true
+        scripts/config --file .config --enable  CC_STACKPROTECTOR_REGULAR || true
+
         # === Тачскрин GT1151 ===
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
         scripts/config --file .config --set-str GT1151_CONFIG  "config1"
@@ -132,7 +144,7 @@ jobs:
         make ARCH=arm64 olddefconfig
 
         echo "=== Final config check ==="
-        grep -E "GT1151|GTP_CUSTOM|MTK_AEE|MTK_CCCI|LOCALVERSION" .config || true
+        grep -E "GT1151|GTP_CUSTOM|MTK_AEE|MTK_CCCI|LOCALVERSION|STACKPROTECTOR" .config || true
 
     - name: Patch pinctrl include
       run: |
@@ -153,7 +165,6 @@ jobs:
         F="drivers/char/rpmb/rpmb-mtk.c"
         echo "=== Before ==="
         grep -n "mmc/core/queue.h" "$F" || echo "include not present"
-        # Добавляем приватный заголовок из MMC-стека
         grep -q "mmc/core/queue.h" "$F" || \
           sed -i '/#include <linux\/device.h>/a #include "../../mmc/core/queue.h"' "$F"
         echo "=== After ==="
@@ -181,32 +192,26 @@ jobs:
 
     - name: Auto-collect MTK include paths
       run: |
-        # Находим все .h в MTK-областях и добавляем их директории в KBUILD_CFLAGS
         find drivers/misc/mediatek drivers/staging/android/ion \
              sound/soc/mediatek drivers/mmc/host/mediatek \
              drivers/pinctrl/mediatek \
              -type f -name "*.h" 2>/dev/null \
           | xargs -n1 dirname | sort -u > /tmp/mtk_all.txt
         
-        # Убираем мусорные пути
         grep -vE "Documentation|/tools/|/test" /tmp/mtk_all.txt > /tmp/mtk_clean.txt || cp /tmp/mtk_all.txt /tmp/mtk_clean.txt
         
         TOTAL=$(wc -l < /tmp/mtk_clean.txt)
         echo "Found $TOTAL directories with headers"
         
-        # Приоритизируем mt6739-специфичные пути
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
-        # Увеличили cap с 250 до 500 — иначе ComboA выпадает
-        # ~500 путей × ~80 байт = ~40 КБ, до ARG_MAX (~128 КБ) ещё далеко
+        # Cap 500 — достаточно, чтобы ComboA попал
         cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
         echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
         
-        # Проверяем, что ComboA попал в список
         grep -c "ComboA" /tmp/mtk_final.txt || echo "WARNING: ComboA not in list!"
         
-        # Добавляем в корневой Makefile как KBUILD_CFLAGS
         echo "" >> Makefile
         echo "# Alpine port: auto-collected MTK include paths" >> Makefile
         while read -r d; do
@@ -223,19 +228,20 @@ jobs:
       continue-on-error: true
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-android-"
-        export PATH="$TOOLCHAIN_DIR/bin:$PATH"
+        export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
+        export PATH="$TOOLCHAIN_BIN:$PATH"
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
         echo "=== Using toolchain ==="
         ${CROSS_COMPILE}gcc --version | head -1
+        which ${CROSS_COMPILE}gcc
         
         # KCFLAGS — минимум для старого GCC 4.9.4.
-        # Большинство -Wno-error не нужно (GCC 4.9 просто игнорирует
-        # неизвестные -Wno-*), но оставляем ключевые на случай edge cases.
-        # ВАЖНО: каждая строка заканчивается на \ (кроме последней).
+        # GCC 4.9 не создаёт большинство -Werror проблем нового GCC.
+        # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
+        # иначе shell разорвёт строку и получится "Unterminated quoted string".
         export KCFLAGS="-Wno-error \
           -I\$(srctree)"
         
