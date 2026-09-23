@@ -223,7 +223,7 @@ jobs:
       continue-on-error: true
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-"
+        export CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_DIR/bin:$PATH"
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
