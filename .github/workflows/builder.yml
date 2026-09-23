@@ -25,28 +25,32 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
-    - name: Download old GCC 4.9 toolchain (AOSP prebuilt)
+    - name: Download old GCC 4.9 toolchain (LineageOS mirror)
       run: |
-        # AOSP prebuilt GCC 4.9 для aarch64 — стандарт для MTK-ядер 4.x
+        set -x
+        # LineageOS зеркалит AOSP prebuilt GCC 4.9 — обычно надёжнее
+        # чем android.googlesource.com (иногда требует LFS/Gitiles archive)
         git clone --depth=1 \
-          https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
-        
-        # Динамически находим реальную директорию с бинарём gcc
-        # (в репо вложенная структура, поэтому фиксированный путь не годится)
-        GCC_BIN=$(find "$(pwd)/aarch64-linux-android-4.9" -name "aarch64-linux-android-gcc" -type f | head -1)
+          https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+          toolchain-repo
+        echo "=== Repo contents ==="
+        ls -la toolchain-repo/ | head -20
+        echo "=== Find gcc binary ==="
+        # Ищем любой бинарь gcc (может называться gcc или gcc-4.9)
+        GCC_BIN=$(find "$(pwd)/toolchain-repo" -type f -name "aarch64-linux-android-gcc*" ! -name "*.d" 2>/dev/null | head -1)
+        if [ -z "$GCC_BIN" ]; then
+          echo "=== GCC NOT FOUND. Full tree: ==="
+          find toolchain-repo -maxdepth 3 -type d | head -30
+          find toolchain-repo -type f -name "*gcc*" | head -10
+          exit 1
+        fi
         TOOLCHAIN_BIN=$(dirname "$GCC_BIN")
-        TOOLCHAIN_DIR=$(dirname "$TOOLCHAIN_BIN")
-        
-        echo "GCC binary:    $GCC_BIN"
+        echo "GCC binary:  $GCC_BIN"
         echo "Toolchain bin: $TOOLCHAIN_BIN"
-        echo "Toolchain dir: $TOOLCHAIN_DIR"
-        
         echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
-        echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
-        
         "$GCC_BIN" --version | head -1
-        echo "=== Assembler version ==="
-        "$TOOLCHAIN_BIN/aarch64-linux-android-as" --version | head -1
+        echo "=== Assembler ==="
+        ls "$TOOLCHAIN_BIN/" | grep -E "^aarch64-linux-android-(as|ld)$"
 
     - name: Clean working tree
       run: |
