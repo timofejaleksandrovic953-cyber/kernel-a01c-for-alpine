@@ -26,6 +26,29 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
+    - name: Clean working tree (remove cached/generated files)
+      run: |
+        # Убираем всё, что могло остаться от предыдущих сборок
+        rm -rf include/config include/generated
+        rm -rf arch/arm64/boot/Image*
+        rm -rf arch/arm64/boot/dts
+        rm -f .config .config.old .version
+        rm -f Module.symvers modules.order
+        rm -f build.log
+        
+        # Убираем все объектники и служебные файлы, если они случайно
+        # попали в коммит (бывает при неаккуратном git add -A)
+        find . -name "*.o" -not -path "./.git/*" -delete 2>/dev/null || true
+        find . -name "*.cmd" -not -path "./.git/*" -delete 2>/dev/null || true
+        find . -name "*.a" -not -path "./.git/*" -delete 2>/dev/null || true
+        find . -name ".tmp_*" -not -path "./.git/*" -delete 2>/dev/null || true
+        find . -name "*.mod.c" -not -path "./.git/*" -delete 2>/dev/null || true
+        find . -name "modules.order" -not -path "./.git/*" -delete 2>/dev/null || true
+        
+        echo "=== После очистки ==="
+        ls -la | head -10
+        ls -la .config 2>/dev/null || echo ".config удалён"
+
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
