@@ -176,6 +176,19 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
+    - name: Fix rpmb-mtk.c missing mmc_queue definition
+      run: |
+        F="drivers/char/rpmb/rpmb-mtk.c"
+        echo "=== Before ==="
+        grep -n "mmc/core/queue.h\|include.*queue" "$F" || echo "not present"
+        
+        # Добавляем include после последнего #include <linux/...>
+        # (неважно где — главное до определения struct emmc_rpmb_blk_data)
+        sed -i '/#include <linux\/device.h>/a #include "../../mmc/core/queue.h"' "$F"
+        
+        echo "=== After ==="
+        grep -n 'queue.h\|#include' "$F" | head -35
+
     - name: Build kernel
       id: build
       continue-on-error: true
