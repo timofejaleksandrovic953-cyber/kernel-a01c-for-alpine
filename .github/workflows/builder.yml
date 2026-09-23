@@ -165,7 +165,9 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/include \
           -I\$(srctree)/drivers/misc/mediatek/include/mt-plat \
           -I\$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739/include"
+          -I\$(srctree)/drivers/misc/mediatek/include/mt-plat/mt6739/include
+          -I\$(srctree)/drivers/misc/mediatek/uart/mt6739 \
+          -I\$(srctree)/drivers/misc/mediatek/timer/timesync"
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
 
