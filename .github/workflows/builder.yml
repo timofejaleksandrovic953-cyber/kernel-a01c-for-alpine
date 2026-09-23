@@ -189,33 +189,20 @@ jobs:
     - name: Fix ssbd.c is_compat_thread
       run: |
         F="arch/arm64/kernel/ssbd.c"
-        echo "=== Before (first 40 lines) ==="
-        head -40 "$F"
+        echo "=== Before ==="
+        sed -n '1,30p' "$F"
         
-        # CONFIG_COMPAT=n в нашем .config, а функция is_compat_thread
-        # объявлена только под #ifdef CONFIG_COMPAT. Оборачиваем вызов.
-        python3 - <<'PYEOF'
-        import re
-        path = "arch/arm64/kernel/ssbd.c"
-        with open(path) as f:
-            src = f.read()
+        # CONFIG_COMPAT=n, значит is_compat_thread(...) всегда = false.
+        # Просто заменяем вызов — семантически корректно.
+        sed -i 's|is_compat_thread(task_thread_info(task))|false|g' "$F"
+        sed -i 's|is_compat_thread(task_thread_info(tsk))|false|g' "$F"
+        sed -i 's|is_compat_thread(thread_info)|false|g' "$F"
         
-        # Оборачиваем вызов is_compat_thread(...) в #ifdef CONFIG_COMPAT
-        pattern = re.compile(
-            r'(?m)^(\s*)(if\s*\(\s*is_compat_thread\([^\n]*)$',
-        )
-        def repl(m):
-            indent, line = m.group(1), m.group(2)
-            return f"{indent}#ifdef CONFIG_COMPAT\n{indent}{line}\n{indent}#endif"
-        
-        new_src, count = pattern.subn(repl, src)
-        with open(path, "w") as f:
-            f.write(new_src)
-        print(f"Patched {count} occurrence(s) of is_compat_thread")
-        PYEOF
+        # На всякий случай — общий паттерн на любой вариант аргумента
+        sed -i 's|is_compat_thread(\s*[^)]*)|false|g' "$F"
         
         echo "=== After ==="
-        sed -n '10,45p' "$F"
+        grep -n "is_compat_thread\|false" "$F" | head -15
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
