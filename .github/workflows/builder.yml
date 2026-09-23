@@ -47,6 +47,8 @@ jobs:
         scripts/config --file .config --disable SEC_DEBUG_EXTRA_INFO || true
         scripts/config --file .config --disable SEC_DEBUG_PANIC_ALWAYS || true
         scripts/config --file .config --disable SEC_DEBUG_SOFTLOCKUP_DETECTOR || true
+        # LOCALVERSION с пробелами ломает mkcompile_h — заменяем на безопасное значение
+        scripts/config --file .config --set-str LOCALVERSION "-KatsuragiOC"
 
         make ARCH=arm64 olddefconfig
 
