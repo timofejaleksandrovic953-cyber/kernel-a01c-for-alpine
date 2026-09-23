@@ -100,22 +100,14 @@ jobs:
           grep -n "TRACE_INCLUDE_PATH" "$f"
         done
 
-    - name: Fix GPU rogue trace path
+    - name: Drop GPU from build
       run: |
-        # Патчим все 4 версии — неважно, какая выберется
-        for f in $(find drivers/misc/mediatek/gpu/gpu_rgx -name "rogue_trace_events.h"); do
-          echo "=== $f ==="
-          grep -n "TRACE_INCLUDE_PATH\|TRACE_INCLUDE_FILE" "$f" | head -5
-          
-          # Получаем путь от корня ядра
-          DIR=$(dirname "$f")
-          
-          # Заменяем любое определение TRACE_INCLUDE_PATH на правильный путь
-          sed -i "s|^#define TRACE_INCLUDE_PATH .*|#define TRACE_INCLUDE_PATH $DIR|" "$f"
-          
-          # Проверка
-          grep -n "TRACE_INCLUDE_PATH" "$f"
-        done
+        MF="drivers/misc/mediatek/gpu/Makefile"
+        [ -f "$MF" ] && sed -i '/gpu_rgx/ s/^/# /' "$MF"
+        echo "=== After ==="
+        cat "$MF"
+        echo "=== Config GPU options ==="
+        grep -iE "MTK_GPU_SUPPORT|MTK_GPU_RGX|GPU_RGX" .config || echo "no config opts"
         
     - name: Build kernel
       id: build
