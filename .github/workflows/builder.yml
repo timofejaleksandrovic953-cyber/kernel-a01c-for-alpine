@@ -28,7 +28,6 @@ jobs:
     - name: Download old GCC 4.9 toolchain
       run: |
         set -e
-        # Пробуем несколько источников — LineageOS зеркало обычно самое надёжное
         URLS=(
           "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git"
           "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9"
@@ -45,7 +44,7 @@ jobs:
               CLONED=1
               break
             else
-              echo "=== Cloned but no gcc binary in bin/ — trying next ==="
+              echo "=== Cloned but no gcc binary — trying next ==="
               ls -la toolchain-repo/ | head -10
             fi
           fi
@@ -59,8 +58,6 @@ jobs:
         TOOLCHAIN_BIN="$(pwd)/toolchain-repo/bin"
         echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> $GITHUB_ENV
         
-        echo "=== Toolchain contents ==="
-        ls -la "$TOOLCHAIN_BIN" | head -20
         echo "=== GCC version ==="
         "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" --version | head -1
 
@@ -95,6 +92,13 @@ jobs:
         rm -rf drivers/misc/mediatek/base/power/mt_cpufreq/
         rm -rf drivers/misc/mediatek/base/power/mt_cpufreq_hybrid/
         rm -rf drivers/misc/mediatek/base/power/mt_cpufreq_hw/
+        # EEM / EEMGPU — работают только со стеком MTK cpufreq
+        rm -rf drivers/misc/mediatek/base/power/eem_v1/
+        rm -rf drivers/misc/mediatek/base/power/eem_v2/
+        rm -rf drivers/misc/mediatek/base/power/eemgpu_v1/
+        rm -rf drivers/misc/mediatek/base/power/eemgpu_v2/
+        rm -rf drivers/misc/mediatek/base/power/mtk_eem/
+        rm -rf drivers/misc/mediatek/base/power/eem/
         
         # === 2. Комментируем ВСЕ ссылки на удалённые Kconfig ===
         for kf in $(find drivers -name "Kconfig" 2>/dev/null); do
@@ -104,6 +108,10 @@ jobs:
           sed -i '/mediatek\/modem\/Kconfig/ s|^|# |' "$kf"
           sed -i '/cpufreq_v[12]\/Kconfig/ s|^|# |' "$kf"
           sed -i '/mt_cpufreq.*\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/base\/power\/eem_v[12]\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/base\/power\/eemgpu_v[12]\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/base\/power\/eem\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/base\/power\/mtk_eem\/Kconfig/ s|^|# |' "$kf"
         done
         
         # === 3. Убираем obj-y ссылки из Makefile ===
@@ -113,12 +121,14 @@ jobs:
         fi
         MF2="drivers/misc/mediatek/base/power/Makefile"
         if [ -f "$MF2" ]; then
-          sed -i '/cpufreq/d' "$MF2"
+          sed -i '/cpufreq/d; /eem/d' "$MF2"
         fi
         
         # === 4. Проверка ===
         echo "=== Remaining Kconfig refs to removed dirs ==="
-        grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig\|cpufreq_v[12]/Kconfig" drivers/ 2>/dev/null || echo "clean"
+        grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig\|cpufreq_v[12]/Kconfig\|eem.*\/Kconfig" drivers/ 2>/dev/null || echo "clean"
+        echo "=== Remaining base/power dirs ==="
+        ls drivers/misc/mediatek/base/power/ 2>/dev/null
 
     - name: Prepare kernel config
       run: |
@@ -143,14 +153,17 @@ jobs:
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
-        # === Модем и cpufreq не нужны ===
+        # === Модем, cpufreq, EEM — не нужны ===
         for opt in MTK_CCCI_DRIVER MTK_CCCI_DRIVER_MTK MTK_MD_CCIF \
                    MTK_RILD MTK_MD_POWER_OFF MTK_MODEM_SUPPORT \
                    MTK_CCCI_OPT MTK_MD1_SUPPORT MTK_MD2_SUPPORT \
                    MTK_CCCI_FS MTK_MD_CCIF_DRV \
                    MTK_CPU_FREQ MTK_CPU_FREQ_V1 MTK_CPU_FREQ_V2 \
                    MTK_CPUFREQ_SUPPORT MTK_CPU_FREQ_HW \
-                   MTK_CPUFREQ_HYBRID MTK_CPUFREQ_PPM; do
+                   MTK_CPUFREQ_HYBRID MTK_CPUFREQ_PPM \
+                   MTK_EEM_CONFIG MTK_EEM_V1 MTK_EEM_V2 MTK_EEM \
+                   MTK_CPU_EEM MTK_EEM_MT6739 MTK_EEMGPU_CONFIG \
+                   MTK_EEMGPU_V2 MTK_CPUISOLATION MTK_CPUIDLE_V2; do
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
@@ -190,19 +203,12 @@ jobs:
       run: |
         F="arch/arm64/kernel/ssbd.c"
         echo "=== Before ==="
-        sed -n '1,30p' "$F"
-        
-        # CONFIG_COMPAT=n, значит is_compat_thread(...) всегда = false.
-        # Просто заменяем вызов — семантически корректно.
-        sed -i 's|is_compat_thread(task_thread_info(task))|false|g' "$F"
-        sed -i 's|is_compat_thread(task_thread_info(tsk))|false|g' "$F"
-        sed -i 's|is_compat_thread(thread_info)|false|g' "$F"
-        
-        # На всякий случай — общий паттерн на любой вариант аргумента
-        sed -i 's|is_compat_thread(\s*[^)]*)|false|g' "$F"
-        
+        sed -n '10,25p' "$F"
+        # CONFIG_COMPAT=n → is_compat_thread(...) всегда false.
+        # Заменяем любой вызов (с любым аргументом) на false.
+        sed -i -E 's|is_compat_thread[[:space:]]*\([^)]*\)|false|g' "$F"
         echo "=== After ==="
-        grep -n "is_compat_thread\|false" "$F" | head -15
+        sed -n '10,25p' "$F"
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
@@ -268,8 +274,6 @@ jobs:
         # === ЖЁСТКАЯ ПРОВЕРКА: если тулчейн не подключился — падаем сразу ===
         if [ -z "$TOOLCHAIN_BIN" ] || [ ! -x "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" ]; then
           echo "FATAL: Toolchain not found at $TOOLCHAIN_BIN"
-          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
-          ls -la "$TOOLCHAIN_BIN" 2>/dev/null || echo "(directory does not exist)"
           exit 1
         fi
         
@@ -277,22 +281,19 @@ jobs:
         ${CROSS_COMPILE}gcc --version | head -1
         which ${CROSS_COMPILE}gcc
         
-        # Проверяем, что версия GCC именно старая (4.9-9.x), а не 12+
         GCC_VER=$(${CROSS_COMPILE}gcc -dumpversion)
         echo "Detected GCC version: $GCC_VER"
         case "$GCC_VER" in
-          4.9*|5.*|6.*|7.*|8.*|9.*) echo "OK — old GCC, ядро 4.x поддерживается" ;;
-          *) echo "FATAL: GCC version $GCC_VER слишком новый для ядра 4.x"
-             exit 1 ;;
+          4.9*|5.*|6.*|7.*|8.*|9.*) echo "OK — old GCC" ;;
+          *) echo "FATAL: GCC $GCC_VER too new for kernel 4.x"; exit 1 ;;
         esac
         
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
-        # KCFLAGS — минимум для старого GCC 4.9.4.
-        # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
-        # иначе shell разорвёт строку → "Unterminated quoted string".
+        # KCFLAGS — минимум для старого GCC 4.9.
+        # ВАЖНО: каждая строка оканчивается на \ (кроме последней).
         export KCFLAGS="-Wno-error \
           -I\$(srctree)"
         
