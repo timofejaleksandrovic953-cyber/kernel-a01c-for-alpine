@@ -20,11 +20,23 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          gcc-aarch64-linux-gnu \
           bc bison flex libssl-dev \
-          make python3 git \
+          make python3 git wget xz-utils \
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
+
+    - name: Download old GCC 4.9.4 toolchain
+      run: |
+        # Linaro GCC 4.9.4 для ARM64 — стандарт для MTK-ядер 4.x
+        URL="https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-linux-gnu/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu.tar.xz"
+        wget -q "$URL" -O toolchain.tar.xz
+        tar -xf toolchain.tar.xz
+        TOOLCHAIN_DIR="$(pwd)/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu"
+        echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
+        echo "=== Toolchain binaries ==="
+        ls "$TOOLCHAIN_DIR/bin/" | head -5
+        echo "=== GCC version ==="
+        "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" --version | head -1
 
     - name: Clean working tree
       run: |
@@ -44,32 +56,43 @@ jobs:
     # ============================================================
     - name: Remove non-essential dirs + patch Kconfig
       run: |
-        # === 1. Удаляем директории ===
+        # === 1. Удаляем ненужные директории ===
+        # GPU — не работает в Alpine без Android HAL
         rm -rf drivers/misc/mediatek/gpu/
+        # Модем — звонки всё равно не работают без Android-стека
         rm -rf drivers/misc/mediatek/eccci/
         rm -rf drivers/misc/mediatek/ccci_util/
         rm -rf drivers/misc/mediatek/modem/
+        # MTK cpufreq — заменяется стандартным Linux cpufreq
+        rm -rf drivers/misc/mediatek/base/power/cpufreq_v1/
+        rm -rf drivers/misc/mediatek/base/power/cpufreq_v2/
+        rm -rf drivers/misc/mediatek/base/power/mt_cpufreq/
+        rm -rf drivers/misc/mediatek/base/power/mt_cpufreq_hybrid/
+        rm -rf drivers/misc/mediatek/base/power/mt_cpufreq_hw/
         
         # === 2. Комментируем ВСЕ ссылки на удалённые Kconfig ===
-        # Проходим по всем Kconfig-файлам в drivers/
         for kf in $(find drivers -name "Kconfig" 2>/dev/null); do
           sed -i '/mediatek\/gpu\/Kconfig/ s|^|# |' "$kf"
           sed -i '/mediatek\/eccci\/Kconfig/ s|^|# |' "$kf"
           sed -i '/mediatek\/ccci_util\/Kconfig/ s|^|# |' "$kf"
           sed -i '/mediatek\/modem\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/cpufreq_v[12]\/Kconfig/ s|^|# |' "$kf"
+          sed -i '/mt_cpufreq.*\/Kconfig/ s|^|# |' "$kf"
         done
         
-        # === 3. Убираем obj-y ссылки на удалённые директории ===
+        # === 3. Убираем obj-y ссылки из Makefile ===
         MF="drivers/misc/mediatek/Makefile"
         if [ -f "$MF" ]; then
           sed -i '/eccci/d; /ccci_util/d; /modem/d; /gpu\//d' "$MF"
         fi
+        MF2="drivers/misc/mediatek/base/power/Makefile"
+        if [ -f "$MF2" ]; then
+          sed -i '/cpufreq/d' "$MF2"
+        fi
         
         # === 4. Проверка ===
-        echo "=== Remaining Kconfig references to removed dirs ==="
-        grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig" drivers/ 2>/dev/null || echo "clean"
-        echo "=== Remaining obj-y references ==="
-        grep -rn "eccci\|ccci_util\|mediatek/modem\|mediatek/gpu" drivers/misc/mediatek/Makefile 2>/dev/null || echo "clean"
+        echo "=== Remaining Kconfig refs to removed dirs ==="
+        grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig\|cpufreq_v[12]/Kconfig" drivers/ 2>/dev/null || echo "clean"
 
     - name: Prepare kernel config
       run: |
@@ -90,11 +113,14 @@ jobs:
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
-        # === Модем не нужен ===
+        # === Модем и cpufreq не нужны ===
         for opt in MTK_CCCI_DRIVER MTK_CCCI_DRIVER_MTK MTK_MD_CCIF \
                    MTK_RILD MTK_MD_POWER_OFF MTK_MODEM_SUPPORT \
                    MTK_CCCI_OPT MTK_MD1_SUPPORT MTK_MD2_SUPPORT \
-                   MTK_CCCI_FS MTK_MD_CCIF_DRV; do
+                   MTK_CCCI_FS MTK_MD_CCIF_DRV \
+                   MTK_CPU_FREQ MTK_CPU_FREQ_V1 MTK_CPU_FREQ_V2 \
+                   MTK_CPUFREQ_SUPPORT MTK_CPU_FREQ_HW \
+                   MTK_CPUFREQ_HYBRID MTK_CPUFREQ_PPM; do
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
@@ -119,6 +145,17 @@ jobs:
         echo "=== Before ==="; grep "PARIS" "$MF"
         sed -i 's| pinctrl-mtk-common-v2_debug\.o||' "$MF"
         echo "=== After ==="; grep "PARIS" "$MF"
+
+    - name: Fix rpmb-mtk.c (mmc_queue definition)
+      run: |
+        F="drivers/char/rpmb/rpmb-mtk.c"
+        echo "=== Before ==="
+        grep -n "mmc/core/queue.h" "$F" || echo "include not present"
+        # Добавляем приватный заголовок из MMC-стека
+        grep -q "mmc/core/queue.h" "$F" || \
+          sed -i '/#include <linux\/device.h>/a #include "../../mmc/core/queue.h"' "$F"
+        echo "=== After ==="
+        grep -n 'queue.h' "$F" || true
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
@@ -159,10 +196,13 @@ jobs:
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
-        # Собираем: сначала mt6739, потом остальные, кап на 250 путей
-        # (ARG_MAX позволяет ~500, но с запасом берём 250)
-        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -250 > /tmp/mtk_final.txt
+        # Увеличили cap с 250 до 500 — иначе ComboA выпадает
+        # ~500 путей × ~80 байт = ~40 КБ, до ARG_MAX (~128 КБ) ещё далеко
+        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
         echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
+        
+        # Проверяем, что ComboA попал в список
+        grep -c "ComboA" /tmp/mtk_final.txt || echo "WARNING: ComboA not in list!"
         
         # Добавляем в корневой Makefile как KBUILD_CFLAGS
         echo "" >> Makefile
@@ -176,55 +216,25 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
-    - name: Fix rpmb-mtk.c missing mmc_queue definition
-      run: |
-        F="drivers/char/rpmb/rpmb-mtk.c"
-        echo "=== Before ==="
-        grep -n "mmc/core/queue.h\|include.*queue" "$F" || echo "not present"
-        
-        # Добавляем include после последнего #include <linux/...>
-        # (неважно где — главное до определения struct emmc_rpmb_blk_data)
-        sed -i '/#include <linux\/device.h>/a #include "../../mmc/core/queue.h"' "$F"
-        
-        echo "=== After ==="
-        grep -n 'queue.h\|#include' "$F" | head -35
-
     - name: Build kernel
       id: build
       continue-on-error: true
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-"
+        export PATH="$TOOLCHAIN_DIR/bin:$PATH"
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
-        # KCFLAGS — только -Wno-error и -I$(srctree).
-        # Все остальные -I добавляются через KBUILD_CFLAGS в Makefile
-        # (см. шаг "Auto-collect MTK include paths").
-        # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
-        # иначе shell разорвёт строку и получится "Unterminated quoted string".
-        export KCFLAGS="-Wno-error=array-bounds \
-          -Wno-error=implicit-function-declaration \
-          -Wno-error=array-compare \
-          -Wno-error=unused-variable \
-          -Wno-error=zero-length-bounds \
-          -Wno-error=stringop-overflow \
-          -Wno-error=stringop-overread \
-          -Wno-error=stringop-truncation \
-          -Wno-error=format-truncation \
-          -Wno-error=maybe-uninitialized \
-          -Wno-error=misleading-indentation \
-          -Wno-error=dangling-pointer \
-          -Wno-error=address \
-          -Wno-error=shift-negative-value \
-          -Wno-error=unused-but-set-variable \
-          -Wno-error=restrict \
-          -Wno-error=undef \
-          -Wno-error=enum-int-mismatch \
-          -Wno-error=incompatible-pointer-types \
-          -Wno-error=sizeof-array-div \
-          -Wno-error=pointer-compare \
+        echo "=== Using toolchain ==="
+        ${CROSS_COMPILE}gcc --version | head -1
+        
+        # KCFLAGS — минимум для старого GCC 4.9.4.
+        # Большинство -Wno-error не нужно (GCC 4.9 просто игнорирует
+        # неизвестные -Wno-*), но оставляем ключевые на случай edge cases.
+        # ВАЖНО: каждая строка заканчивается на \ (кроме последней).
+        export KCFLAGS="-Wno-error \
           -I\$(srctree)"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
