@@ -100,14 +100,14 @@ jobs:
           grep -n "TRACE_INCLUDE_PATH" "$f"
         done
 
-    - name: Drop GPU from build
+    - name: Remove entire GPU directory
       run: |
-        MF="drivers/misc/mediatek/gpu/Makefile"
-        [ -f "$MF" ] && sed -i '/gpu_rgx/ s/^/# /' "$MF"
-        echo "=== After ==="
-        cat "$MF"
-        echo "=== Config GPU options ==="
-        grep -iE "MTK_GPU_SUPPORT|MTK_GPU_RGX|GPU_RGX" .config || echo "no config opts"
+        # Удаляем и PowerVR (rgx), и Mali, и всё что внутри
+        rm -rf drivers/misc/mediatek/gpu/
+        
+        # Проверим, что ссылок больше нет
+        grep -rn "mediatek/gpu\b" drivers/Makefile drivers/misc/mediatek/Makefile 2>/dev/null || echo "clean"
+        ls drivers/misc/mediatek/ | grep -i gpu || echo "gpu directory gone"
         
     - name: Build kernel
       id: build
