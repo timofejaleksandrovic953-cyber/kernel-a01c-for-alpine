@@ -25,18 +25,20 @@ jobs:
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
 
-    - name: Download old GCC 4.9.4 toolchain
+    - name: Download old GCC 4.9 toolchain (AOSP prebuilt)
       run: |
-        # Linaro GCC 4.9.4 для ARM64 — стандарт для MTK-ядер 4.x
-        URL="https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/aarch64-linux-gnu/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu.tar.xz"
-        wget -q "$URL" -O toolchain.tar.xz
-        tar -xf toolchain.tar.xz
-        TOOLCHAIN_DIR="$(pwd)/gcc-linaro-4.9.4-2017.01-x86_64_aarch64-linux-gnu"
+        # AOSP prebuilt GCC 4.9 для aarch64 — стандарт для MTK-ядер 4.x
+        # (Linaro переехал, их старые URL отдают HTML вместо tar.xz)
+        git clone --depth=1 \
+          https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+        
+        TOOLCHAIN_DIR="$(pwd)/aarch64-linux-android-4.9/bin"
         echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
-        echo "=== Toolchain binaries ==="
-        ls "$TOOLCHAIN_DIR/bin/" | head -5
+        
+        echo "=== Binaries ==="
+        ls "$TOOLCHAIN_DIR/" | head -10
         echo "=== GCC version ==="
-        "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" --version | head -1
+        "$TOOLCHAIN_DIR/aarch64-linux-android-gcc" --version | head -1
 
     - name: Clean working tree
       run: |
