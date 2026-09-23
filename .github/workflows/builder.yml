@@ -203,12 +203,28 @@ jobs:
       run: |
         F="arch/arm64/kernel/ssbd.c"
         echo "=== Before ==="
-        sed -n '10,25p' "$F"
-        # CONFIG_COMPAT=n → is_compat_thread(...) всегда false.
-        # Заменяем любой вызов (с любым аргументом) на false.
-        sed -i -E 's|is_compat_thread[[:space:]]*\([^)]*\)|false|g' "$F"
+        sed -n '1,30p' "$F"
+        
+        # Удаляем старые фолбэки/макросы, если были от прошлых попыток
+        sed -i '/fallback_is_compat_thread/d' "$F"
+        sed -i '/#define is_compat_thread/d' "$F"
+        
+        # Находим последний #include и после него вставляем макрос
+        LAST_INC=$(grep -n '^#include' "$F" | tail -1 | cut -d: -f1)
+        echo "Last #include at line: $LAST_INC"
+        
+        sed -i "${LAST_INC}a\\
+        \\
+        #ifndef CONFIG_COMPAT\\
+        #define is_compat_thread(x) (false)\\
+        #endif" "$F"
+        
         echo "=== After ==="
-        sed -n '10,25p' "$F"
+        sed -n '1,40p' "$F"
+        
+        # Проверяем, что старые неверные замены не остались
+        echo "=== Check for broken replacements ==="
+        grep -n "false)" "$F" || echo "no broken replacements"
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
