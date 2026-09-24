@@ -155,7 +155,10 @@ jobs:
 
         # === LOCALVERSION без пробелов ===
         scripts/config --file .config --set-str LOCALVERSION "-a01core"
-
+        # === Старый GCC 4.9 (AOSP prebuilt) не поддерживает -fstack-protector* ===
+        scripts/config --file .config --disable CC_STACKPROTECTOR_STRONG || true
+        scripts/config --file .config --disable CC_STACKPROTECTOR_REGULAR || true
+        scripts/config --file .config --disable CC_STACKPROTECTOR || true
         make ARCH=arm64 olddefconfig
 
         echo "=== Final config check ==="
