@@ -257,7 +257,7 @@ jobs:
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
-        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
+        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -1000 > /tmp/mtk_final.txt
         echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
         
         grep -c "ComboA" /tmp/mtk_final.txt || echo "WARNING: ComboA not in list!"
@@ -318,6 +318,8 @@ jobs:
           -Wno-error=undef \
           -Wno-error=address \
           -Wno-error=array-bounds \
+          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
+          -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
           -I\$(srctree)"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
