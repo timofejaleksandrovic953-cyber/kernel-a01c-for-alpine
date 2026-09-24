@@ -307,28 +307,17 @@ jobs:
         # это не ошибка, kbuild их проигнорирует.
         # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
         # иначе shell разорвёт строку → "Unterminated quoted string".
+        # KCFLAGS — минимальный набор для GCC 4.9.
+        # ВАЖНО: убираем все -Werror=xxx для опций, которых нет в GCC 4.9,
+        # иначе cc1 падает с "no option -Wxxx".
         export KCFLAGS="-Wno-error \
-          -Wno-error=array-bounds \
           -Wno-error=implicit-function-declaration \
-          -Wno-error=array-compare \
           -Wno-error=unused-variable \
-          -Wno-error=zero-length-bounds \
-          -Wno-error=stringop-overflow \
-          -Wno-error=stringop-overread \
-          -Wno-error=stringop-truncation \
-          -Wno-error=format-truncation \
           -Wno-error=maybe-uninitialized \
-          -Wno-error=misleading-indentation \
-          -Wno-error=dangling-pointer \
-          -Wno-error=address \
-          -Wno-error=shift-negative-value \
           -Wno-error=unused-but-set-variable \
-          -Wno-error=restrict \
           -Wno-error=undef \
-          -Wno-error=enum-int-mismatch \
-          -Wno-error=incompatible-pointer-types \
-          -Wno-error=sizeof-array-div \
-          -Wno-error=pointer-compare \
+          -Wno-error=address \
+          -Wno-error=array-bounds \
           -I\$(srctree)"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
