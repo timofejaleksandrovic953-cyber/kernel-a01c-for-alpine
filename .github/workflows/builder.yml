@@ -125,6 +125,15 @@ jobs:
         if [ -f "$MF2" ]; then
           sed -i '/cpufreq/d; /eem/d' "$MF2"
         fi
+
+        MF2="drivers/misc/mediatek/base/power/Makefile"
+        if [ -f "$MF2" ]; then
+          echo "=== Before $MF2 ==="
+          grep -n "mt6739\|eem\|cpufreq\|picachu\|gpufreq" "$MF2" || echo "no matches"
+          sed -i '/cpufreq/d; /eem/d; /mt6739\//d; /picachu/d; /gpufreq/d' "$MF2"
+          echo "=== After $MF2 ==="
+          cat "$MF2"
+        fi
         
         # === 4. Проверка ===
         echo "=== Remaining Kconfig refs to removed dirs ==="
