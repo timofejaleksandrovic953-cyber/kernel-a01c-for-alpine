@@ -98,6 +98,9 @@ jobs:
           drivers/misc/mediatek/base/power/mtk_eem
           drivers/misc/mediatek/base/power/eem
           drivers/misc/mediatek/base/power/mt6739
+          drivers/misc/mediatek/cmdq/v2
+          drivers/misc/mediatek/base/power/upower_v2
+          drivers/misc/mediatek/base/power/upower
         "
         
         for d in $DIRS; do
@@ -249,8 +252,9 @@ jobs:
              -type f -name "*.h" 2>/dev/null \
           | xargs -n1 dirname | sort -u > /tmp/mtk_all.txt
         
-        grep -vE "Documentation|/tools/|/test" /tmp/mtk_all.txt > /tmp/mtk_clean.txt || cp /tmp/mtk_all.txt /tmp/mtk_clean.txt
-        
+        grep -vE "Documentation|/tools/|/test|/cmdq/v2/|/upower_v2/|/cpufreq_v[12]/|/eem_" \
+          /tmp/mtk_all.txt > /tmp/mtk_clean.txt || cp /tmp/mtk_all.txt /tmp/mtk_clean.txt
+          
         TOTAL=$(wc -l < /tmp/mtk_clean.txt)
         echo "Found $TOTAL directories with headers"
         
