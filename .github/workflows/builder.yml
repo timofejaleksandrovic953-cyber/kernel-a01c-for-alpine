@@ -99,6 +99,8 @@ jobs:
         rm -rf drivers/misc/mediatek/base/power/eemgpu_v2/
         rm -rf drivers/misc/mediatek/base/power/mtk_eem/
         rm -rf drivers/misc/mediatek/base/power/eem/
+        # PICACHU (PTP) + GPU freq для mt6739 — оба зависят от удалённых eem/gpu
+        rm -rf drivers/misc/mediatek/base/power/mt6739/
         
         # === 2. Комментируем ВСЕ ссылки на удалённые Kconfig ===
         for kf in $(find drivers -name "Kconfig" 2>/dev/null); do
