@@ -257,7 +257,7 @@ jobs:
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
-        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -750 > /tmp/mtk_final.txt
+        cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
         echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
         
         grep -c "ComboA" /tmp/mtk_final.txt || echo "WARNING: ComboA not in list!"
