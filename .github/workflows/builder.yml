@@ -102,6 +102,9 @@ jobs:
           drivers/misc/mediatek/base/power/upower_v2
           drivers/misc/mediatek/base/power/upower
           drivers/misc/mediatek/conn_md
+          drivers/misc/mediatek/connfem
+          drivers/misc/mediatek/fmradio
+          drivers/misc/mediatek/gps
         "
         
         for d in $DIRS; do
@@ -326,7 +329,8 @@ jobs:
           -Wno-error=array-bounds \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
-          -I\$(srctree)"
+          -I\$(srctree) \
+          -I\$(srctree)/drivers/misc/mediatek/mmp"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
