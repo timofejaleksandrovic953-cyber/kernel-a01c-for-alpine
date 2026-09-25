@@ -315,7 +315,9 @@ jobs:
         
         LINE1='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include'
         LINE2='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include'
-        LINE3='subdir-ccflags-y += -DDBG=1'
+        # НЕ добавляем -DDBG=1 — он уже определён в wlan-коде, даёт redefinition
+        # Глушим -Werror для всего wlan-стека (в нём много warning'ов)
+        LINE3='subdir-ccflags-y += -Wno-error'
         
         grep -qF "$LINE1" "$MF" || echo "$LINE1" >> "$MF"
         grep -qF "$LINE2" "$MF" || echo "$LINE2" >> "$MF"
