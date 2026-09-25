@@ -311,38 +311,15 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
-    - name: Make wlan debug.h self-contained
+    
+    - name: Fix wlan debug.h include order
       run: |
-        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/debug.h"
-        echo "=== Before (lines 410-440) ==="
-        sed -n '410,440p' "$F"
-        
-        # Вставляем forward-декларации типов в начало debug.h,
-        # чтобы он не зависел от порядка включения
-        if ! grep -q "ALPINE_FORWARD_DECLS" "$F"; then
-          # Находим первый #ifndef/#define guard
-          FIRST_GUARD=$(grep -n "define.*_H" "$F" | head -1 | cut -d: -f1)
-          [ -z "$FIRST_GUARD" ] && FIRST_GUARD=1
-          
-          awk -v line="$FIRST_GUARD" '
-          NR == line+1 && !done {
-              print ""
-              print "/* ALPINE_FORWARD_DECLS: типы из gl_os.h, чтобы debug.h был самодостаточен */"
-              print "typedef void * P_ADAPTER_T;"
-              print "typedef void * P_CMD_INFO_T;"
-              print "typedef void * P_BSS_DESC_T;"
-              print "typedef void * P_MSDU_INFO_T;"
-              print "typedef int ENUM_AMPDU_TYPE;"
-              print "/* конец ALPINE_FORWARD_DECLS */"
-              print ""
-              done = 1
-          }
-          { print }
-          ' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
-        fi
-        
-        echo "=== After (lines 1-20) ==="
-        head -20 "$F"
+        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include/gl_os.h"
+        grep -n 'debug\.h' "$F"
+        sed -i '/#include *"debug\.h"/d' "$F"
+        LINE=$(grep -n '^#endif' "$F" | tail -1 | cut -d: -f1)
+        [ -n "$LINE" ] && sed -i "${LINE}i #include \"debug.h\"" "$F" || echo '#include "debug.h"' >> "$F"
+        grep -n 'debug\.h' "$F"
 
     - name: Build kernel
       id: build
