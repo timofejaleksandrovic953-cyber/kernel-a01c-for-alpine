@@ -304,44 +304,47 @@ jobs:
 
     # ============================================================
     # WLAN: scoped includes + DBGLOG fallback через -include.
-    # Fallback подключается ДО первого кода каждого .c, поэтому
-    # DBGLOG, REQ, ERROR, INFO, WARN определены с самого начала.
-    # -DDBG=1 НЕ добавляем — он конфликтует с собственным DBG в wlan.
+    # Fallback подключается ДО первого кода каждого .c.
+    #
+    # ВАЖНО: определяем ТОЛЬКО DBGLOG как no-op.
+    # REQ/ERROR/INFO/WARN НЕ определяем — они аргументы DBGLOG,
+    # а DBGLOG их выбрасывает. Определять их как макросы нельзя:
+    # WARN конфликтует с ядерным WARN() из include/linux/bug.h.
     # ============================================================
     - name: Scope wlan include paths + DBGLOG fallback
       run: |
         FALLBACK="drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/alpine_dbglog_fallback.h"
         
-        
-        cat > "$FALLBACK" << 'EOF'
-        #ifndef ALPINE_DBGLOG_FALLBACK_H
-        #define ALPINE_DBGLOG_FALLBACK_H
-
-        /* Fallback для wlan-кода: DBGLOG и классы логирования.
-         * Реализация — no-op, потому что printk в wlan-коде уже переопределён
-         * и наш собственный вызов ломается. Логи wlan не критичны для сборки. */
-        
-        #ifndef REQ
-        #define REQ 0
-        #define TRACE 1
-        #define INFO 2
-        #define WARN 3
-        #define ERROR 4
-        #endif
-        
-        #ifndef DBGLOG
-        #define DBGLOG(...) do { } while (0)
-        #endif
-        
-        #ifndef DBGLOGLIMITED
-        #define DBGLOGLIMITED(...) do { } while (0)
-        #endif
-        
-        #endif
-        EOF
+        # Генерируем файл через printf (без heredoc — избегаем проблем с YAML)
+        printf '%s\n' \
+          '#ifndef ALPINE_DBGLOG_FALLBACK_H' \
+          '#define ALPINE_DBGLOG_FALLBACK_H' \
+          '' \
+          '/* Fallback для wlan: DBGLOG как no-op. */' \
+          '/* REQ/ERROR/INFO/WARN НЕ определяем — они аргументы DBGLOG, */' \
+          '/* а DBGLOG их выбрасывает. WARN конфликтует с kernel WARN(). */' \
+          '' \
+          '#ifndef DBGLOG' \
+          '#define DBGLOG(...) do { } while (0)' \
+          '#endif' \
+          '' \
+          '#ifndef DBGLOGLIMITED' \
+          '#define DBGLOGLIMITED(...) do { } while (0)' \
+          '#endif' \
+          '' \
+          '#ifndef DBGLOG_MEM8' \
+          '#define DBGLOG_MEM8(...) do { } while (0)' \
+          '#endif' \
+          '' \
+          '#ifndef DBGLOG_MEM32' \
+          '#define DBGLOG_MEM32(...) do { } while (0)' \
+          '#endif' \
+          '' \
+          '#endif' \
+          > "$FALLBACK"
         
         echo "=== Created fallback ==="
-        head -10 "$FALLBACK"
+        cat "$FALLBACK"
         
         MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/Makefile"
         [ -f "$MF" ] || MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/Makefile"
@@ -391,8 +394,7 @@ jobs:
         export KBUILD_BUILD_VERSION="1"
         
         # KCFLAGS — минимальный набор для GCC 4.9.
-        # ВАЖНО: каждая строка оканчивается на \ (кроме последней),
-        # иначе shell разорвёт строку → "Unterminated quoted string".
+        # ВАЖНО: каждая строка оканчивается на \ (кроме последней).
         export KCFLAGS="-Wno-error \
           -Wno-error=implicit-function-declaration \
           -Wno-error=unused-variable \
