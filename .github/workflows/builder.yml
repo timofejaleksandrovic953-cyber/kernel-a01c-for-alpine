@@ -321,6 +321,21 @@ jobs:
         [ -n "$LINE" ] && sed -i "${LINE}i #include \"debug.h\"" "$F" || echo '#include "debug.h"' >> "$F"
         grep -n 'debug\.h' "$F"
 
+    - name: Scope wlan include paths (avoid namespace collision)
+      run: |
+        # wlan-пути нужны только своим файлам, а не всему ядру
+        MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/Makefile"
+        [ -f "$MF" ] || MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/Makefile"
+        
+        LINE1='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include'
+        LINE2='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include'
+        
+        grep -qF "$LINE1" "$MF" || echo "$LINE1" >> "$MF"
+        grep -qF "$LINE2" "$MF" || echo "$LINE2" >> "$MF"
+        
+        echo "=== $MF tail ==="
+        tail -5 "$MF"
+
     - name: Build kernel
       id: build
       continue-on-error: true
@@ -377,8 +392,6 @@ jobs:
           -I\$(srctree)/drivers/staging/android/ion \
           -I\$(srctree)/drivers/misc/mediatek/leds \
           -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include \
-          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include \
           -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/common \
           -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
           -I\$(srctree)/drivers/misc/mediatek/smi \
@@ -386,6 +399,8 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739/videox \
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
           -I\$(srctree)/drivers/misc/mediatek/video/common \
+          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base/v1 \
+          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
