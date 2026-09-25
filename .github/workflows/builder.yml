@@ -311,6 +311,39 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
+    - name: Make wlan debug.h self-contained
+      run: |
+        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/debug.h"
+        echo "=== Before (lines 410-440) ==="
+        sed -n '410,440p' "$F"
+        
+        # Вставляем forward-декларации типов в начало debug.h,
+        # чтобы он не зависел от порядка включения
+        if ! grep -q "ALPINE_FORWARD_DECLS" "$F"; then
+          # Находим первый #ifndef/#define guard
+          FIRST_GUARD=$(grep -n "define.*_H" "$F" | head -1 | cut -d: -f1)
+          [ -z "$FIRST_GUARD" ] && FIRST_GUARD=1
+          
+          awk -v line="$FIRST_GUARD" '
+          NR == line+1 && !done {
+              print ""
+              print "/* ALPINE_FORWARD_DECLS: типы из gl_os.h, чтобы debug.h был самодостаточен */"
+              print "typedef void * P_ADAPTER_T;"
+              print "typedef void * P_CMD_INFO_T;"
+              print "typedef void * P_BSS_DESC_T;"
+              print "typedef void * P_MSDU_INFO_T;"
+              print "typedef int ENUM_AMPDU_TYPE;"
+              print "/* конец ALPINE_FORWARD_DECLS */"
+              print ""
+              done = 1
+          }
+          { print }
+          ' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+        fi
+        
+        echo "=== After (lines 1-20) ==="
+        head -20 "$F"
+
     - name: Build kernel
       id: build
       continue-on-error: true
@@ -373,6 +406,9 @@ jobs:
           -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
           -I\$(srctree)/drivers/misc/mediatek/smi \
           -I\$(srctree)/drivers/misc/mediatek/timer/timesync \
+          -I\$(srctree)/drivers/misc/mediatek/video/mt6739/videox \
+          -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
+          -I\$(srctree)/drivers/misc/mediatek/video/common \
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
