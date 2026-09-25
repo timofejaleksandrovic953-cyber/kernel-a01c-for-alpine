@@ -109,7 +109,10 @@ jobs:
         
         for d in $DIRS; do
           if [ -d "$d" ]; then
-            rm -f "$d"/*.c "$d"/*.h "$d"/*.S "$d"/*.o 2>/dev/null || true
+            find "$d" -type f \( -name "*.c" -o -name "*.h" -o -name "*.S" -o -name "*.o" \) -delete 2>/dev/null || true
+            # Убираем и Makefile внутри поддиректорий, чтобы kbuild туда не лез
+            find "$d" -mindepth 2 -name "Makefile" -delete 2>/dev/null || true
+            find "$d" -mindepth 2 -name "Kconfig" -delete 2>/dev/null || true
             printf '# Disabled for Alpine port\nobj-y := alpine_dummy.o\n' > "$d/Makefile"
             printf 'int alpine_dummy;\n' > "$d/alpine_dummy.c"
             printf '# Disabled for Alpine port\n' > "$d/Kconfig"
