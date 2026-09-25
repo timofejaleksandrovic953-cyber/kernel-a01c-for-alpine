@@ -400,7 +400,7 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
           -I\$(srctree)/drivers/misc/mediatek/video/common \
           -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base/v1 \
-          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base
+          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base \
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
