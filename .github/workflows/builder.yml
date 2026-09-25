@@ -21,9 +21,15 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y \
           bc bison flex libssl-dev \
-          make python3 git wget xz-utils \
+          make python3 git wget xz-utils ccache \
           perl libxml-simple-perl libxml-libxml-perl \
           libparse-yapp-perl libdbi-perl
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ github.ref }}-a01core
+        max-size: 2G
 
     - name: Download old GCC 4.9 toolchain
       run: |
@@ -109,7 +115,7 @@ jobs:
         
         for d in $DIRS; do
           if [ -d "$d" ]; then
-            find "$d" -type f \( -name "*.c" -o -name "*.h" -o -name "*.S" -o -name "*.o" \) -delete 2>/dev/null || true
+            find "$d" -type f \( -name "*.c" -o -name "*.S" -o -name "*.o" \) -delete 2>/dev/null || true
             # Убираем и Makefile внутри поддиректорий, чтобы kbuild туда не лез
             find "$d" -mindepth 2 -name "Makefile" -delete 2>/dev/null || true
             find "$d" -mindepth 2 -name "Kconfig" -delete 2>/dev/null || true
