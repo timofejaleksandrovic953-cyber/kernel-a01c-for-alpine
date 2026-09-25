@@ -125,6 +125,14 @@ jobs:
             echo "Neutralized: $d"
           fi
         done
+
+        # Отдельно: конфликтующие версии драйверов — удалить целиком,
+        # включая .h, чтобы не путались с актуальной версией.
+        # cmdq: для mt6739 собирается v3, а v2 даёт duplicate headers.
+        rm -rf drivers/misc/mediatek/cmdq/v2
+        # upower_v2 — работает в паре с eem (удалён), .h тоже не нужны
+        rm -rf drivers/misc/mediatek/base/power/upower_v2
+        rm -rf drivers/misc/mediatek/base/power/upower
         
         echo "=== Kconfig refs to neutralized dirs (should be none) ==="
         grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig" drivers/ 2>/dev/null || echo "clean"
