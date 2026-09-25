@@ -116,7 +116,6 @@ jobs:
         for d in $DIRS; do
           if [ -d "$d" ]; then
             find "$d" -type f \( -name "*.c" -o -name "*.S" -o -name "*.o" \) -delete 2>/dev/null || true
-            # Убираем и Makefile внутри поддиректорий, чтобы kbuild туда не лез
             find "$d" -mindepth 2 -name "Makefile" -delete 2>/dev/null || true
             find "$d" -mindepth 2 -name "Kconfig" -delete 2>/dev/null || true
             printf '# Disabled for Alpine port\nobj-y := alpine_dummy.o\n' > "$d/Makefile"
@@ -128,9 +127,7 @@ jobs:
 
         # Отдельно: конфликтующие версии драйверов — удалить целиком,
         # включая .h, чтобы не путались с актуальной версией.
-        # cmdq: для mt6739 собирается v3, а v2 даёт duplicate headers.
         rm -rf drivers/misc/mediatek/cmdq/v2
-        # upower_v2 — работает в паре с eem (удалён), .h тоже не нужны
         rm -rf drivers/misc/mediatek/base/power/upower_v2
         rm -rf drivers/misc/mediatek/base/power/upower
 
@@ -155,10 +152,6 @@ jobs:
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
-
-        # === Старый GCC 4.9 не поддерживает -fstack-protector-strong ===
-        scripts/config --file .config --disable CC_STACKPROTECTOR_STRONG || true
-        scripts/config --file .config --enable  CC_STACKPROTECTOR_REGULAR || true
 
         # === Тачскрин GT1151 ===
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
@@ -186,16 +179,18 @@ jobs:
                    MTK_EEM_CONFIG MTK_EEM_V1 MTK_EEM_V2 MTK_EEM \
                    MTK_CPU_EEM MTK_EEM_MT6739 MTK_EEMGPU_CONFIG \
                    MTK_EEMGPU_V2 MTK_CPUISOLATION MTK_CPUIDLE_V2 \
-                   MTK_PICACHU MTK_PTP; do
+                   MTK_PICACHU MTK_PTP MTK_UNIFY_POWER MTK_UPOWER; do
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
-        # === LOCALVERSION без пробелов ===
-        scripts/config --file .config --set-str LOCALVERSION "-a01core"
         # === Старый GCC 4.9 (AOSP prebuilt) не поддерживает -fstack-protector* ===
         scripts/config --file .config --disable CC_STACKPROTECTOR_STRONG || true
         scripts/config --file .config --disable CC_STACKPROTECTOR_REGULAR || true
         scripts/config --file .config --disable CC_STACKPROTECTOR || true
+
+        # === LOCALVERSION без пробелов ===
+        scripts/config --file .config --set-str LOCALVERSION "-a01core"
+
         make ARCH=arm64 olddefconfig
 
         echo "=== Final config check ==="
@@ -231,15 +226,12 @@ jobs:
         echo "=== Before ==="
         sed -n '1,30p' "$F"
         
-        # Убираем следы прошлых патчей
         sed -i '/fallback_is_compat_thread/d' "$F"
         sed -i '/#define is_compat_thread/d' "$F"
         
-        # Номер строки последнего #include
         LAST_INC=$(grep -n '^#include' "$F" | tail -1 | cut -d: -f1)
         echo "Last #include at line: $LAST_INC"
         
-        # awk вставляет блок сразу после указанной строки — без sed-экранирования
         awk -v line="$LAST_INC" '
         NR == line {
             print
@@ -286,7 +278,7 @@ jobs:
              -type f -name "*.h" 2>/dev/null \
           | xargs -n1 dirname | sort -u > /tmp/mtk_all.txt
         
-        grep -vE "Documentation|/tools/|/test|/cmdq/v2/|/upower_v2/|/cpufreq_v[12]/|/eem_" \
+        grep -vE "Documentation|/tools/|/test|/cmdq/v2/|/upower_v2/|/cpufreq_v[12]/|/eem_|wlan_drv_gen2|wmt_drv|wmt_chrdev" \
           /tmp/mtk_all.txt > /tmp/mtk_clean.txt || cp /tmp/mtk_all.txt /tmp/mtk_clean.txt
           
         TOTAL=$(wc -l < /tmp/mtk_clean.txt)
@@ -311,39 +303,92 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
-    - name: Scope wlan include paths (avoid namespace collision)
+    # ============================================================
+    # WLAN-scoped includes: paths применяются ТОЛЬКО к файлам wlan,
+    # иначе namespace collision с video/debug.h и другими драйверами.
+    # ============================================================
+    - name: Scope wlan include paths
       run: |
-        # wlan-пути нужны только своим файлам, а не всему ядру
         MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/Makefile"
         [ -f "$MF" ] || MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/Makefile"
+        [ -f "$MF" ] || { echo "no wlan Makefile found"; exit 1; }
         
         LINE1='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include'
         LINE2='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include'
+        LINE3='subdir-ccflags-y += -DDBG=1'
         
         grep -qF "$LINE1" "$MF" || echo "$LINE1" >> "$MF"
         grep -qF "$LINE2" "$MF" || echo "$LINE2" >> "$MF"
+        grep -qF "$LINE3" "$MF" || echo "$LINE3" >> "$MF"
         
         echo "=== $MF tail ==="
-        tail -5 "$MF"
+        tail -6 "$MF"
+
+    # ============================================================
+    # WLAN debug.h include fixes:
+    # 1) gl_os.h в конце тянет debug.h (типы P_ADAPTER_T уже определены)
+    # 2) platform.c явно включает debug.h после gl_os.h
+    # ============================================================
+    - name: Fix gl_os.h debug.h include
+      run: |
+        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include/gl_os.h"
+        echo "=== Before ==="
+        grep -n 'debug\.h' "$F" || echo "(debug.h не включён)"
+        
+        # Убираем старые вставки
+        sed -i '/#include *"debug\.h"/d' "$F"
+        
+        # Вставляем перед последним #endif (include guard)
+        LAST_ENDIF=$(grep -n '^#endif' "$F" | tail -1 | cut -d: -f1)
+        echo "Last #endif at line: $LAST_ENDIF"
+        if [ -n "$LAST_ENDIF" ]; then
+          sed -i "${LAST_ENDIF}i #include \"debug.h\"" "$F"
+        else
+          echo '#include "debug.h"' >> "$F"
+        fi
+        
+        echo "=== After ==="
+        grep -n 'debug\.h' "$F"
+        tail -5 "$F"
 
     - name: Fix platform.c debug.h include
       run: |
         F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/platform.c"
-        grep -q '#include "debug.h"' "$F" || \
-          sed -i '/#include "gl_os.h"/a #include "debug.h"' "$F"
-        grep -n 'debug\.h\|gl_os\.h' "$F" | head
+        echo "=== Before ==="
+        grep -n 'debug\.h\|gl_os\.h' "$F"
+        
+        # Убираем старые вставки
+        sed -i '/#include *"debug\.h"/d' "$F"
+        
+        # Вставляем после gl_os.h через awk (без sed-сюрпризов)
+        awk '
+        /^#include "gl_os\.h"/ && !done {
+          print
+          print "#include \"debug.h\""
+          done = 1
+          next
+        }
+        { print }
+        ' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+        
+        echo "=== After ==="
+        grep -n 'debug\.h\|gl_os\.h' "$F"
+        
+        # Проверяем, что include появился
+        if ! grep -q '#include "debug\.h"' "$F"; then
+          echo "ERROR: debug.h include не добавлен!"
+          exit 1
+        fi
 
     - name: Build kernel
       id: build
       continue-on-error: true
       run: |
         export ARCH=arm64
-        # ccache - префикс для компилятора. Работает только с gcc,
-        # а не с as/ld/ar — поэтому kbuild это подхватит корректно.
+        # ccache - префикс только для gcc (не для as/ld/ar).
         export CC="ccache $TOOLCHAIN_BIN/aarch64-linux-android-gcc"
         export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_BIN:$PATH"
-        
         
         # === ЖЁСТКАЯ ПРОВЕРКА тулчейна ===
         if [ -z "$TOOLCHAIN_BIN" ] || [ ! -x "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" ]; then
@@ -366,14 +411,9 @@ jobs:
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
-        # KCFLAGS — расширенный список -Wno-error.
-        # Часть опций GCC 4.9 не знает и выдаст warning об unrecognized option —
-        # это не ошибка, kbuild их проигнорирует.
-        # ВАЖНО: каждая строка заканчивается на \ (кроме последней),
-        # иначе shell разорвёт строку → "Unterminated quoted string".
         # KCFLAGS — минимальный набор для GCC 4.9.
-        # ВАЖНО: убираем все -Werror=xxx для опций, которых нет в GCC 4.9,
-        # иначе cc1 падает с "no option -Wxxx".
+        # ВАЖНО: каждая строка оканчивается на \ (кроме последней),
+        # иначе shell разорвёт строку → "Unterminated quoted string".
         export KCFLAGS="-Wno-error \
           -Wno-error=implicit-function-declaration \
           -Wno-error=unused-variable \
@@ -382,14 +422,14 @@ jobs:
           -Wno-error=undef \
           -Wno-error=address \
           -Wno-error=array-bounds \
+          -I\$(srctree) \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
-          -I\$(srctree) \
           -I\$(srctree)/drivers/misc/mediatek/mmp \
           -I\$(srctree)/drivers/staging/android/ion \
+          -I\$(srctree)/drivers/staging/android/ion/mtk \
           -I\$(srctree)/drivers/misc/mediatek/leds \
           -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
-          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/common \
           -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
           -I\$(srctree)/drivers/misc/mediatek/smi \
           -I\$(srctree)/drivers/misc/mediatek/timer/timesync \
@@ -397,8 +437,7 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/video/mt6739 \
           -I\$(srctree)/drivers/misc/mediatek/video/common \
           -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base/v1 \
-          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base \
-          -I\$(srctree)/drivers/staging/android/ion/mtk"
+          -I\$(srctree)/drivers/misc/mediatek/video/common/layering_rule_base"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
