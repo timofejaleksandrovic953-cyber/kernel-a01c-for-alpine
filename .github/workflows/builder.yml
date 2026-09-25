@@ -101,6 +101,7 @@ jobs:
           drivers/misc/mediatek/cmdq/v2
           drivers/misc/mediatek/base/power/upower_v2
           drivers/misc/mediatek/base/power/upower
+          drivers/misc/mediatek/conn_md
         "
         
         for d in $DIRS; do
