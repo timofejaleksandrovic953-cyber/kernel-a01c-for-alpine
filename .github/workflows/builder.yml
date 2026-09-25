@@ -372,6 +372,7 @@ jobs:
           -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/common \
           -I\$(srctree)/drivers/watchdog/mediatek/wdt/common/wdt_v2 \
           -I\$(srctree)/drivers/misc/mediatek/smi \
+          -I\$(srctree)/drivers/misc/mediatek/timer/timesync \
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
