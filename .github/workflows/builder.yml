@@ -316,8 +316,12 @@ jobs:
       continue-on-error: true
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE="ccache $TOOLCHAIN_BIN/aarch64-linux-android-"
+        # ccache - префикс для компилятора. Работает только с gcc,
+        # а не с as/ld/ar — поэтому kbuild это подхватит корректно.
+        export CC="ccache $TOOLCHAIN_BIN/aarch64-linux-android-gcc"
+        export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_BIN:$PATH"
+        
         
         # === ЖЁСТКАЯ ПРОВЕРКА тулчейна ===
         if [ -z "$TOOLCHAIN_BIN" ] || [ ! -x "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" ]; then
@@ -363,6 +367,9 @@ jobs:
           -I\$(srctree)/drivers/staging/android/ion \
           -I\$(srctree)/drivers/misc/mediatek/leds \
           -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
+          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include \
+          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include \
+          -I\$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/common \
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
