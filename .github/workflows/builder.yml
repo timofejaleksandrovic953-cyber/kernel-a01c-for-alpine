@@ -119,7 +119,7 @@ jobs:
             find "$d" -mindepth 2 -name "Makefile" -delete 2>/dev/null || true
             find "$d" -mindepth 2 -name "Kconfig" -delete 2>/dev/null || true
             printf '# Disabled for Alpine port\nobj-y := alpine_dummy.o\n' > "$d/Makefile"
-            printf 'int alpine_dummy;\n' > "$d/alpine_dummy.c"
+            printf 'static int alpine_dummy __attribute__((unused));\n' > "$d/alpine_dummy.c"
             printf '# Disabled for Alpine port\n' > "$d/Kconfig"
             echo "Neutralized: $d"
           fi
