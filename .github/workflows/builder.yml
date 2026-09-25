@@ -333,7 +333,9 @@ jobs:
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA \
           -I\$(srctree)/drivers/mmc/host/mediatek/ComboA/mt6739 \
           -I\$(srctree) \
-          -I\$(srctree)/drivers/misc/mediatek/mmp"
+          -I\$(srctree)/drivers/misc/mediatek/mmp \
+          -I\$(srctree)/drivers/staging/android/ion \
+          -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
         exit ${PIPESTATUS[0]}
