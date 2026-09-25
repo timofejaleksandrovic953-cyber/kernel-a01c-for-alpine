@@ -311,16 +311,6 @@ jobs:
         echo "=== Total KBUILD_CFLAGS added ==="
         grep -c "KBUILD_CFLAGS += -I" Makefile
 
-    
-    - name: Fix wlan debug.h include order
-      run: |
-        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include/gl_os.h"
-        grep -n 'debug\.h' "$F"
-        sed -i '/#include *"debug\.h"/d' "$F"
-        LINE=$(grep -n '^#endif' "$F" | tail -1 | cut -d: -f1)
-        [ -n "$LINE" ] && sed -i "${LINE}i #include \"debug.h\"" "$F" || echo '#include "debug.h"' >> "$F"
-        grep -n 'debug\.h' "$F"
-
     - name: Scope wlan include paths (avoid namespace collision)
       run: |
         # wlan-пути нужны только своим файлам, а не всему ядру
@@ -335,6 +325,13 @@ jobs:
         
         echo "=== $MF tail ==="
         tail -5 "$MF"
+
+    - name: Fix platform.c debug.h include
+      run: |
+        F="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/platform.c"
+        grep -q '#include "debug.h"' "$F" || \
+          sed -i '/#include "gl_os.h"/a #include "debug.h"' "$F"
+        grep -n 'debug\.h\|gl_os\.h' "$F" | head
 
     - name: Build kernel
       id: build
