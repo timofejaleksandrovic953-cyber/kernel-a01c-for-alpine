@@ -361,6 +361,8 @@ jobs:
           -I\$(srctree) \
           -I\$(srctree)/drivers/misc/mediatek/mmp \
           -I\$(srctree)/drivers/staging/android/ion \
+          -I\$(srctree)/drivers/misc/mediatek/leds \
+          -I\$(srctree)/drivers/misc/mediatek/leds/mt6739 \
           -I\$(srctree)/drivers/staging/android/ion/mtk"
         
         make -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
