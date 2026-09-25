@@ -133,6 +133,18 @@ jobs:
         # upower_v2 — работает в паре с eem (удалён), .h тоже не нужны
         rm -rf drivers/misc/mediatek/base/power/upower_v2
         rm -rf drivers/misc/mediatek/base/power/upower
+
+        # Чистим ссылки в родительских Makefile
+        for mf in drivers/misc/mediatek/base/power/Makefile \
+                  drivers/misc/mediatek/cmdq/Makefile; do
+          if [ -f "$mf" ]; then
+            echo "=== Before: $mf ==="
+            grep -n "upower\|cmdq/v2" "$mf" || echo "(no matches)"
+            sed -i '/upower/d; /cmdq\/v2/d' "$mf"
+            echo "=== After: $mf ==="
+            grep -n "upower\|cmdq/v2" "$mf" || echo "(clean)"
+          fi
+        done
         
         echo "=== Kconfig refs to neutralized dirs (should be none) ==="
         grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig" drivers/ 2>/dev/null || echo "clean"
