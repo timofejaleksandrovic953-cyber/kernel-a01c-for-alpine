@@ -106,7 +106,8 @@ jobs:
         for d in $DIRS; do
           if [ -d "$d" ]; then
             rm -f "$d"/*.c "$d"/*.h "$d"/*.S "$d"/*.o 2>/dev/null || true
-            printf '# Disabled for Alpine port\nobj-y :=\n' > "$d/Makefile"
+            printf '# Disabled for Alpine port\nobj-y := alpine_dummy.o\n' > "$d/Makefile"
+            printf 'int alpine_dummy;\n' > "$d/alpine_dummy.c"
             printf '# Disabled for Alpine port\n' > "$d/Kconfig"
             echo "Neutralized: $d"
           fi
