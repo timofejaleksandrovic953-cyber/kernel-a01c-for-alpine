@@ -296,7 +296,7 @@ jobs:
       continue-on-error: true
       run: |
         export ARCH=arm64
-        export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
+        export CROSS_COMPILE="ccache $TOOLCHAIN_BIN/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_BIN:$PATH"
         
         # === ЖЁСТКАЯ ПРОВЕРКА тулчейна ===
