@@ -312,13 +312,14 @@ jobs:
       run: |
         FALLBACK="drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/alpine_dbglog_fallback.h"
         
+        
         cat > "$FALLBACK" << 'EOF'
         #ifndef ALPINE_DBGLOG_FALLBACK_H
         #define ALPINE_DBGLOG_FALLBACK_H
 
-        /* Fallback для wlan-кода: force-include через -include, чтобы DBGLOG
-         * и классы (REQ/INFO/WARN/ERROR) были доступны до первого использования,
-         * даже если debug.h не подключён или определён неправильно. */
+        /* Fallback для wlan-кода: DBGLOG и классы логирования.
+         * Реализация — no-op, потому что printk в wlan-коде уже переопределён
+         * и наш собственный вызов ломается. Логи wlan не критичны для сборки. */
         
         #ifndef REQ
         #define REQ 0
@@ -329,13 +330,11 @@ jobs:
         #endif
         
         #ifndef DBGLOG
-        #define DBGLOG(_Module, _Class, _Fmt, ...) \
-          do { printk(KERN_INFO "[%s] " _Fmt, __func__, ##__VA_ARGS__); } while (0)
+        #define DBGLOG(...) do { } while (0)
         #endif
         
         #ifndef DBGLOGLIMITED
-        #define DBGLOGLIMITED(_Module, _Class, _Fmt, ...) \
-          do { printk(KERN_INFO "[%s] " _Fmt, __func__, ##__VA_ARGS__); } while (0)
+        #define DBGLOGLIMITED(...) do { } while (0)
         #endif
         
         #endif
