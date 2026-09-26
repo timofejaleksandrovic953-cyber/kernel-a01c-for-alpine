@@ -1,0 +1,76 @@
+name: Build fbterm for Alpine aarch64
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-fbterm.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install QEMU user-static
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-user-static binfmt-support wget tar
+        ls -la /proc/sys/fs/binfmt_misc/qemu-aarch64
+
+    - name: Download Alpine minirootfs
+      run: |
+        mkdir -p ${{ github.workspace }}/fbterm-build
+        cd ${{ github.workspace }}/fbterm-build
+        wget -q https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz
+        mkdir -p rootfs
+        sudo tar -xzf alpine-minirootfs-3.20.3-aarch64.tar.gz -C rootfs
+        sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
+
+    - name: Prepare chroot
+      run: |
+        cd ${{ github.workspace }}/fbterm-build
+        sudo mount --bind /proc rootfs/proc
+        sudo mount --bind /sys rootfs/sys
+        sudo mount --bind /dev rootfs/dev
+        echo "nameserver 8.8.8.8" | sudo tee rootfs/etc/resolv.conf
+        
+        sudo chroot rootfs /bin/sh -c '
+          /bin/busybox --install -s /bin
+          apk update
+          apk add build-base git fontconfig-dev freetype-dev ncurses-dev
+        '
+
+    - name: Clone and build fbterm
+      run: |
+        cd ${{ github.workspace }}/fbterm-build
+        sudo chroot rootfs /bin/sh -c '
+          cd /tmp
+          git clone --depth=1 https://github.com/changcs/fbterm
+          cd fbterm
+          ./configure --prefix=/usr
+          make -j$(nproc)
+          make install DESTDIR=/tmp/fbterm-out
+          ls -la /tmp/fbterm-out/usr/bin/
+        '
+
+    - name: Collect artifact
+      run: |
+        sudo mkdir -p ${{ github.workspace }}/output
+        sudo cp -r ${{ github.workspace }}/fbterm-build/rootfs/tmp/fbterm-out/usr/* \
+                   ${{ github.workspace }}/output/ 2>/dev/null || true
+        ls -laR ${{ github.workspace }}/output/
+
+    - name: Cleanup mounts
+      if: always()
+      run: |
+        cd ${{ github.workspace }}/fbterm-build
+        sudo umount rootfs/proc || true
+        sudo umount rootfs/sys || true
+        sudo umount rootfs/dev || true
+
+    - name: Upload fbterm
+      uses: actions/upload-artifact@v4
+      with:
+        name: fbterm-aarch64-alpine
+        path: output/
