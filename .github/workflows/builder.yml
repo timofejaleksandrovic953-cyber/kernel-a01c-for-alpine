@@ -3,6 +3,13 @@ name: Build A01 Core Kernel
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'a01core.config'
+      - 'arch/arm64/boot/dts/**'
+      - 'drivers/misc/mediatek/**'
+      - 'include/**'
+      - 'kernel/**'
+      - '.github/workflows/builder.yml'
   workflow_dispatch:
 
 jobs:
