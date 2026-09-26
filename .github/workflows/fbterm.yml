@@ -38,7 +38,7 @@ jobs:
         sudo chroot rootfs /bin/sh -c '
           /bin/busybox --install -s /bin
           apk update
-          apk add build-base git fontconfig-dev freetype-dev ncurses-dev
+          apk add build-base git fontconfig-dev freetype-dev ncurses-dev linux-headers
         '
 
     - name: Clone and build fbterm
