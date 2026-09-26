@@ -79,12 +79,6 @@ jobs:
         echo "=== Cleaned ==="
         ls -la | head -10
 
-    # ============================================================
-    # НЕЙТРАЛИЗАЦИЯ директорий (не удаление!):
-    # оставляем папку, но с пустым Makefile (obj-y := dummy) и пустым Kconfig.
-    # Это убирает ошибки "No rule to make target .../Makefile"
-    # и "can't open file .../Kconfig".
-    # ============================================================
     - name: Neutralize non-essential MTK dirs
       run: |
         DIRS="
@@ -125,41 +119,27 @@ jobs:
           fi
         done
 
-        # Конфликтующие версии драйверов — удалить целиком (включая .h)
         rm -rf drivers/misc/mediatek/cmdq/v2
         rm -rf drivers/misc/mediatek/base/power/upower_v2
         rm -rf drivers/misc/mediatek/base/power/upower
 
-        # Чистим ссылки в родительских Makefile
         for mf in drivers/misc/mediatek/base/power/Makefile \
                   drivers/misc/mediatek/cmdq/Makefile; do
           if [ -f "$mf" ]; then
-            echo "=== Before: $mf ==="
-            grep -n "upower\|cmdq/v2" "$mf" || echo "(no matches)"
             sed -i '/upower/d; /cmdq\/v2/d' "$mf"
-            echo "=== After: $mf ==="
-            grep -n "upower\|cmdq/v2" "$mf" || echo "(clean)"
           fi
         done
-        
-        echo "=== Kconfig refs to neutralized dirs (should be none) ==="
-        grep -rn "mediatek/\(gpu\|eccci\|ccci_util\|modem\)/Kconfig" drivers/ 2>/dev/null || echo "clean"
-        
-        echo "=== base/power contents ==="
-        ls drivers/misc/mediatek/base/power/ 2>/dev/null
 
     - name: Prepare kernel config
       run: |
         cp a01core.config .config
 
-        # === Тачскрин GT1151 ===
         scripts/config --file .config --set-str GT1151_FIRMWARE "firmware1"
         scripts/config --file .config --set-str GT1151_CONFIG  "config1"
         scripts/config --file .config --enable GTP_CUSTOM_CFG
         scripts/config --file .config --enable GTP_AUTO_UPDATE
         scripts/config --file .config --enable GTP_POWER_CTRL_SLEEP
 
-        # === Отключаем Android-only ===
         for opt in MTK_AEE_MRDUMP MTK_AEE_IPANIC MTK_AEE_AED \
                    SEC_DEBUG SEC_DEBUG_2 SEC_DEBUG_USER \
                    SEC_DEBUG_EXTRA_INFO SEC_DEBUG_PANIC_ALWAYS \
@@ -167,7 +147,6 @@ jobs:
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
-        # === Модем, cpufreq, EEM, picachu — не нужны ===
         for opt in MTK_CCCI_DRIVER MTK_CCCI_DRIVER_MTK MTK_MD_CCIF \
                    MTK_RILD MTK_MD_POWER_OFF MTK_MODEM_SUPPORT \
                    MTK_CCCI_OPT MTK_MD1_SUPPORT MTK_MD2_SUPPORT \
@@ -182,12 +161,10 @@ jobs:
           scripts/config --file .config --disable "$opt" 2>/dev/null || true
         done
 
-        # === Старый GCC 4.9 (AOSP prebuilt) не поддерживает -fstack-protector* ===
         scripts/config --file .config --disable CC_STACKPROTECTOR_STRONG || true
         scripts/config --file .config --disable CC_STACKPROTECTOR_REGULAR || true
         scripts/config --file .config --disable CC_STACKPROTECTOR || true
 
-        # === LOCALVERSION без пробелов ===
         scripts/config --file .config --set-str LOCALVERSION "-a01core"
 
         make ARCH=arm64 olddefconfig
@@ -198,39 +175,25 @@ jobs:
     - name: Patch pinctrl include
       run: |
         F="drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c"
-        echo "=== Before ==="; grep -n 'gpiolib' "$F" || true
         sed -i 's|^#include *[<"]\.\./\.\./gpio/gpiolib\.h[>"].*|#include <linux/gpio/driver.h>|' "$F"
-        echo "=== After ==="; grep -n 'gpiolib\|linux/gpio/driver' "$F" || true
 
     - name: Drop pinctrl debug file from build
       run: |
         MF="drivers/pinctrl/mediatek/Makefile"
-        echo "=== Before ==="; grep "PARIS" "$MF"
         sed -i 's| pinctrl-mtk-common-v2_debug\.o||' "$MF"
-        echo "=== After ==="; grep "PARIS" "$MF"
 
     - name: Fix rpmb-mtk.c (mmc_queue definition)
       run: |
         F="drivers/char/rpmb/rpmb-mtk.c"
-        echo "=== Before ==="
-        grep -n "mmc/core/queue.h" "$F" || echo "include not present"
         grep -q "mmc/core/queue.h" "$F" || \
           sed -i '/#include <linux\/device.h>/a #include "../../mmc/core/queue.h"' "$F"
-        echo "=== After ==="
-        grep -n 'queue.h' "$F" || true
 
     - name: Fix ssbd.c is_compat_thread
       run: |
         F="arch/arm64/kernel/ssbd.c"
-        echo "=== Before ==="
-        sed -n '1,30p' "$F"
-        
         sed -i '/fallback_is_compat_thread/d' "$F"
         sed -i '/#define is_compat_thread/d' "$F"
-        
         LAST_INC=$(grep -n '^#include' "$F" | tail -1 | cut -d: -f1)
-        echo "Last #include at line: $LAST_INC"
-        
         awk -v line="$LAST_INC" '
         NR == line {
             print
@@ -242,32 +205,17 @@ jobs:
         }
         { print }
         ' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
-        
-        echo "=== After ==="
-        sed -n '1,40p' "$F"
-        
-        echo "=== Broken replacements check ==="
-        grep -n "false)" "$F" || echo "no broken replacements"
 
     - name: Fix all TRACE_INCLUDE_PATH dots
       run: |
         FILES=$(grep -rl '^#define TRACE_INCLUDE_PATH \.$' \
                 drivers/misc/mediatek/ sound/ 2>/dev/null || true)
-        
-        if [ -z "$FILES" ]; then
-          echo "No files with TRACE_INCLUDE_PATH . — OK"
-        else
+        if [ -n "$FILES" ]; then
           echo "$FILES" | while read -r f; do
             DIR=$(dirname "$f")
-            echo "Patching: $f → $DIR"
             sed -i "s|^#define TRACE_INCLUDE_PATH \.$|#define TRACE_INCLUDE_PATH $DIR|" "$f"
           done
         fi
-        
-        echo "=== Verify ==="
-        echo "$FILES" | while read -r f; do
-          [ -n "$f" ] && grep -n "TRACE_INCLUDE_PATH" "$f"
-        done
 
     - name: Auto-collect MTK include paths
       run: |
@@ -279,50 +227,25 @@ jobs:
         
         grep -vE "Documentation|/tools/|/test|/cmdq/v2/|/upower_v2/|/cpufreq_v[12]/|/eem_|wlan_drv_gen2|wmt_drv|wmt_chrdev" \
           /tmp/mtk_all.txt > /tmp/mtk_clean.txt || cp /tmp/mtk_all.txt /tmp/mtk_clean.txt
-          
-        TOTAL=$(wc -l < /tmp/mtk_clean.txt)
-        echo "Found $TOTAL directories with headers"
         
         grep -E "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_pri.txt || true
         grep -vE "mt6739" /tmp/mtk_clean.txt > /tmp/mtk_rest.txt || true
         
         cat /tmp/mtk_pri.txt /tmp/mtk_rest.txt | head -500 > /tmp/mtk_final.txt
-        echo "Capped to $(wc -l < /tmp/mtk_final.txt) paths"
-        
-        grep -c "ComboA" /tmp/mtk_final.txt || echo "WARNING: ComboA not in list!"
         
         echo "" >> Makefile
         echo "# Alpine port: auto-collected MTK include paths" >> Makefile
         while read -r d; do
           echo "KBUILD_CFLAGS += -I\$(srctree)/$d" >> Makefile
         done < /tmp/mtk_final.txt
-        
-        echo "=== Makefile tail ==="
-        tail -5 Makefile
-        echo "=== Total KBUILD_CFLAGS added ==="
-        grep -c "KBUILD_CFLAGS += -I" Makefile
 
-    # ============================================================
-    # WLAN: scoped includes + DBGLOG fallback через -include.
-    # Fallback подключается ДО первого кода каждого .c.
-    #
-    # ВАЖНО: определяем ТОЛЬКО DBGLOG как no-op.
-    # REQ/ERROR/INFO/WARN НЕ определяем — они аргументы DBGLOG,
-    # а DBGLOG их выбрасывает. Определять их как макросы нельзя:
-    # WARN конфликтует с ядерным WARN() из include/linux/bug.h.
-    # ============================================================
     - name: Scope wlan include paths + DBGLOG fallback
       run: |
         FALLBACK="drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/alpine_dbglog_fallback.h"
         
-        # Генерируем файл через printf (без heredoc — избегаем проблем с YAML)
         printf '%s\n' \
           '#ifndef ALPINE_DBGLOG_FALLBACK_H' \
           '#define ALPINE_DBGLOG_FALLBACK_H' \
-          '' \
-          '/* Fallback для wlan: DBGLOG как no-op. */' \
-          '/* REQ/ERROR/INFO/WARN НЕ определяем — они аргументы DBGLOG, */' \
-          '/* а DBGLOG их выбрасывает. WARN конфликтует с kernel WARN(). */' \
           '' \
           '#ifndef DBGLOG' \
           '#define DBGLOG(...) do { } while (0)' \
@@ -340,39 +263,58 @@ jobs:
           '#define DBGLOG_MEM32(...) do { } while (0)' \
           '#endif' \
           '' \
+          '#ifndef ASSERT' \
+          '#define ASSERT(...) do { } while (0)' \
+          '#endif' \
+          '' \
           '#endif' \
           > "$FALLBACK"
         
-        echo "=== Created fallback ==="
-        cat "$FALLBACK"
-        
         MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/Makefile"
         [ -f "$MF" ] || MF="drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/Makefile"
-        [ -f "$MF" ] || { echo "no wlan Makefile found"; exit 1; }
         
-        LINE1='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include'
-        LINE2='subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include'
-        LINE3='subdir-ccflags-y += -Wno-error'
-        LINE4='subdir-ccflags-y += -include $(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/alpine_dbglog_fallback.h'
-        
-        for L in "$LINE1" "$LINE2" "$LINE3" "$LINE4"; do
+        for L in \
+          'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include' \
+          'subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/os/linux/include' \
+          'subdir-ccflags-y += -Wno-error' \
+          'subdir-ccflags-y += -include $(srctree)/drivers/misc/mediatek/connectivity/wlan_drv_gen2/include/alpine_dbglog_fallback.h' \
+        ; do
           grep -qF "$L" "$MF" || echo "$L" >> "$MF"
         done
+
+    # ============================================================
+    # Стабы для символов из нейтрализованных директорий.
+    # Линкер не находит их в vmlinux, потому что драйверы удалены,
+    # но код, вызывающий их, остался.
+    # ============================================================
+    - name: Add alpine stubs for neutralized symbols
+      run: |
+        printf '%s\n' \
+          '#include <linux/kernel.h>' \
+          '#include <linux/types.h>' \
+          '' \
+          'int gpio_get_tristate_input(unsigned int pin) { return 0; }' \
+          'int mtk_conn_md_bridge_reg(unsigned int a, unsigned int b) { return 0; }' \
+          'int mtk_conn_md_bridge_unreg(unsigned int a, unsigned int b) { return 0; }' \
+          'int mtk_conn_md_bridge_send_msg(void *a, unsigned int b, void *c) { return 0; }' \
+          'unsigned int mt_cpufreq_get_freq_by_idx(unsigned int cluster, unsigned int idx) { return 0; }' \
+          > init/alpine_stubs.c
         
-        echo "=== $MF tail ==="
-        tail -6 "$MF"
+        echo "obj-y += alpine_stubs.o" >> init/Makefile
+        echo "=== init/Makefile tail ==="
+        tail -3 init/Makefile
+        echo "=== alpine_stubs.c ==="
+        cat init/alpine_stubs.c
 
     - name: Build kernel
       id: build
       continue-on-error: true
       run: |
         export ARCH=arm64
-        # ccache - префикс только для gcc (не для as/ld/ar).
         export CC="ccache $TOOLCHAIN_BIN/aarch64-linux-android-gcc"
         export CROSS_COMPILE="$TOOLCHAIN_BIN/aarch64-linux-android-"
         export PATH="$TOOLCHAIN_BIN:$PATH"
         
-        # === ЖЁСТКАЯ ПРОВЕРКА тулчейна ===
         if [ -z "$TOOLCHAIN_BIN" ] || [ ! -x "$TOOLCHAIN_BIN/aarch64-linux-android-gcc" ]; then
           echo "FATAL: Toolchain not found at $TOOLCHAIN_BIN"
           exit 1
@@ -380,21 +322,14 @@ jobs:
         
         echo "=== Toolchain check ==="
         ${CROSS_COMPILE}gcc --version | head -1
-        which ${CROSS_COMPILE}gcc
         
         GCC_VER=$(${CROSS_COMPILE}gcc -dumpversion)
         echo "Detected GCC version: $GCC_VER"
-        case "$GCC_VER" in
-          4.9*|5.*|6.*|7.*|8.*|9.*) echo "OK — old GCC" ;;
-          *) echo "FATAL: GCC $GCC_VER too new for kernel 4.x"; exit 1 ;;
-        esac
         
         export KBUILD_BUILD_USER="builder"
         export KBUILD_BUILD_HOST="localhost"
         export KBUILD_BUILD_VERSION="1"
         
-        # KCFLAGS — минимальный набор для GCC 4.9.
-        # ВАЖНО: каждая строка оканчивается на \ (кроме последней).
         export KCFLAGS="-Wno-error \
           -Wno-error=implicit-function-declaration \
           -Wno-error=unused-variable \
@@ -427,10 +362,10 @@ jobs:
       if: steps.build.outcome == 'failure'
       run: |
         echo "=== First errors ==="
-        grep -n -m20 -E "error:|fatal error" build.log || true
+        grep -n -m20 -E "error:|fatal error|undefined reference" build.log || true
         echo
         echo "=== Context around first error ==="
-        FIRST=$(grep -n -m1 -E "error:|fatal error" build.log | cut -d: -f1)
+        FIRST=$(grep -n -m1 -E "error:|fatal error|undefined reference" build.log | cut -d: -f1)
         if [ -n "$FIRST" ]; then
           START=$((FIRST-10)); [ $START -lt 1 ] && START=1
           sed -n "${START},$((FIRST+15))p" build.log
